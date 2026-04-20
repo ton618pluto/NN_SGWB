@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Superimposed V5 Pipeline</title>
+  <style>
+    :root {
+      --bg: #f7f4ee;
+      --card: #fffdf8;
+      --text: #1f2933;
+      --muted: #52606d;
+      --line: #d9d3c7;
+      --accent: #9f5f3f;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #f7f4ee 0%, #efe7d8 100%);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+    }
+
+    .intro {
+      margin: 0 0 24px;
+      color: var(--muted);
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 24px rgba(31, 41, 51, 0.05);
+    }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: 20px;
+      color: var(--accent);
+    }
+
+    .label {
+      font-weight: 600;
+      margin-top: 8px;
+    }
+
+    ul {
+      margin: 6px 0 0 20px;
+      padding: 0;
+    }
+
+    code {
+      background: #f3ede2;
+      padding: 1px 6px;
+      border-radius: 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+    }
+
+    .flowchart {
+      display: grid;
+      gap: 14px;
+      margin-top: 12px;
+    }
+
+    .flow-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 14px;
+      align-items: stretch;
+    }
+
+    .flow-box {
+      position: relative;
+      padding: 16px 14px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #fffaf1 0%, #f4ead9 100%);
+      border: 1px solid #d8ccb7;
+      box-shadow: 0 10px 24px rgba(92, 68, 38, 0.08);
+    }
+
+    .flow-box h3 {
+      margin: 0 0 6px;
+      font-size: 16px;
+      color: #7a452e;
+    }
+
+    .flow-box p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .flow-arrow {
+      text-align: center;
+      font-size: 24px;
+      color: var(--accent);
+      line-height: 1;
+    }
+
+    .flow-merge {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .flow-center {
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Superimposed V5 Pipeline</h1>
+    <p class="intro">简要说明从超参数采样到带噪声训练数据生成，再到 <code>timeflow_v5</code> 训练的文件级数据流。</p>
+
+    <div class="card">
+      <h2>整体流程图</h2>
+      <div class="flowchart">
+        <div class="flow-row">
+          <div class="flow-box">
+            <h3>1. 超参数采样</h3>
+            <p>先定义一批总体分布参数，作为后续所有样本组的起点。</p>
+          </div>
+          <div class="flow-box">
+            <h3>2. 事件参数生成</h3>
+            <p>在每组超参数下，采样出一批 CBC 事件的物理参数。</p>
+          </div>
+          <div class="flow-box">
+            <h3>3. 纯信号构造</h3>
+            <p>把事件参数投影成探测器中的纯引力波时域信号。</p>
+          </div>
+        </div>
+
+        <div class="flow-arrow">↓</div>
+
+        <div class="flow-merge">
+          <div class="flow-box">
+            <h3>4A. 纯信号支路</h3>
+            <p>保留按超参数组和样本编号组织好的纯信号样本。</p>
+          </div>
+          <div class="flow-center">与</div>
+          <div class="flow-box">
+            <h3>4B. 纯噪声支路</h3>
+            <p>独立生成探测器噪声，并按编号准备好可复用的噪声段。</p>
+          </div>
+        </div>
+
+        <div class="flow-arrow">↓</div>
+
+        <div class="flow-row">
+          <div class="flow-box">
+            <h3>5. 信号与噪声叠加</h3>
+            <p>按样本编号把纯信号和对应噪声一一相加，形成带噪观测。</p>
+          </div>
+          <div class="flow-box">
+            <h3>6. 切分与整理</h3>
+            <p>把长时序切成训练片段，并把标签一起保存成训练可读格式。</p>
+          </div>
+          <div class="flow-box">
+            <h3>7. 模型训练</h3>
+            <p>读取整理后的双探测器数据，切分训练集并训练 TimeFlow V5。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>draw_hyperparameters_v2.py</h2>
+      <div class="label">作用</div>
+      <div>采样联合超参数，生成后续事件采样要用的超参数表。</div>
+      <div class="label">输入</div>
+      <div>无外部输入，脚本内部定义采样范围和随机种子。</div>
+      <div class="label">输出</div>
+      <ul>
+        <li><code>scripts/joint_hyperparams_train/v3/joint_hyperparams_train_v3.npz</code></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>draw_CBC_params_diff.py</h2>
+      <div class="label">作用</div>
+      <div>读取超参数表，为每个超参数组生成一份 CBC 事件参数文件。</div>
+      <div class="label">输入</div>
+      <ul>
+        <li><code>scripts/joint_hyperparams_train/v3/joint_hyperparams_train_v3.npz</code></li>
+      </ul>
+      <div class="label">输出</div>
+      <ul>
+        <li><code>scripts/parameter_sampling_train/v3/CBC_params_examplexxxxx.npz</code></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>generate_pure_cbc_frames_sampling5.py</h2>
+      <div class="label">作用</div>
+      <div>把每组 CBC 事件参数变成纯信号 <code>.gwf</code> 文件，并生成标签表。</div>
+      <div class="label">输入</div>
+      <ul>
+        <li><code>scripts/parameter_sampling_train/v3/CBC_params_examplexxxxx.npz</code></li>
+      </ul>
+      <div class="label">输出</div>
+      <ul>
+        <li><code>scripts/training_set/v3/training_set0/H1/*.gwf</code></li>
+        <li><code>scripts/training_set/v3/training_set0/L1/*.gwf</code></li>
+        <li><code>scripts/training_set/v3/training_set0/train_idx.csv</code></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>generate_pure_noise_frames.py</h2>
+      <div class="label">作用</div>
+      <div>生成 H1 和 L1 的纯噪声 <code>.gwf</code> 文件。</div>
+      <div class="label">输入</div>
+      <ul>
+        <li><code>scripts/O4_mock.txt</code></li>
+      </ul>
+      <div class="label">输出</div>
+      <ul>
+        <li><code>scripts/noise_waveform_H1/*.gwf</code></li>
+        <li><code>scripts/noise_waveform_L1/*.gwf</code></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>superimposed_friendly.py</h2>
+      <div class="label">作用</div>
+      <div>把纯信号和纯噪声按编号叠加，得到带噪声的 <code>.gwf</code>。</div>
+      <div class="label">输入</div>
+      <ul>
+        <li><code>scripts/training_set/v3/training_set0/H1/*.gwf</code></li>
+        <li><code>scripts/training_set/v3/training_set0/L1/*.gwf</code></li>
+        <li><code>scripts/noise_waveform_H1/*.gwf</code></li>
+        <li><code>scripts/noise_waveform_L1/*.gwf</code></li>
+      </ul>
+      <div class="label">输出</div>
+      <ul>
+        <li><code>scripts/training_set_superimposed/v0/H1/*.gwf</code></li>
+        <li><code>scripts/training_set_superimposed/v0/L1/*.gwf</code></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>processData_superimposed.py</h2>
+      <div class="label">作用</div>
+      <div>读取叠加后的 <code>.gwf</code>，切成训练用 <code>.npy</code> 小段，并保留标签。</div>
+      <div class="label">输入</div>
+      <ul>
+        <li><code>scripts/training_set_superimposed/v0/H1/*.gwf</code></li>
+        <li><code>scripts/training_set_superimposed/v0/L1/*.gwf</code></li>
+        <li><code>scripts/training_set_superimposed/v0/train_idx.csv</code></li>
+      </ul>
+      <div class="label">输出</div>
+      <ul>
+        <li><code>scripts/processed_data_superimposed/v0/H1_splits/*.npy</code></li>
+        <li><code>scripts/processed_data_superimposed/v0/L1_splits/*.npy</code></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>timeflow_v5/train_flow.py</h2>
+      <div class="label">作用</div>
+      <div>读取切分后的带噪声训练数据，进行 train / val / test 切分并训练 V5 模型。</div>
+      <div class="label">输入</div>
+      <ul>
+        <li><code>scripts/processed_data_superimposed/v0/H1_splits/*.npy</code></li>
+        <li><code>scripts/processed_data_superimposed/v0/L1_splits/*.npy</code></li>
+      </ul>
+      <div class="label">输出</div>
+      <ul>
+        <li><code>scripts/timeflow_v5/outputs/best_flow_v5.pt</code></li>
+        <li><code>scripts/timeflow_v5/outputs/run_config.json</code></li>
+        <li><code>scripts/timeflow_v5/outputs/data_split.json</code></li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

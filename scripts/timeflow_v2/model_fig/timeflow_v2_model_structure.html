@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TimeFlow V2 模型结构图</title>
+  <style>
+    :root {
+      --bg: #0a0d12;
+      --panel: rgba(18, 24, 35, 0.82);
+      --panel-strong: #131a26;
+      --card: rgba(27, 36, 52, 0.88);
+      --line: rgba(157, 196, 255, 0.22);
+      --text: #edf4ff;
+      --muted: #9aa8c2;
+      --cyan: #73e5ff;
+      --blue: #82a8ff;
+      --violet: #b495ff;
+      --gold: #ffd68a;
+      --green: #8ef2b2;
+      --shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 15% 20%, rgba(115, 229, 255, 0.12), transparent 28%),
+        radial-gradient(circle at 82% 18%, rgba(180, 149, 255, 0.16), transparent 24%),
+        radial-gradient(circle at 50% 100%, rgba(130, 168, 255, 0.16), transparent 35%),
+        linear-gradient(180deg, #07090d 0%, #0b1017 55%, #09111a 100%);
+      min-height: 100vh;
+    }
+
+    .shell {
+      width: min(1400px, calc(100% - 48px));
+      margin: 32px auto 48px;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 34px 36px 30px;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: linear-gradient(145deg, rgba(16, 22, 31, 0.96), rgba(9, 14, 22, 0.92));
+      box-shadow: var(--shadow);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: -30% auto auto 56%;
+      width: 320px;
+      height: 320px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(115, 229, 255, 0.18), transparent 68%);
+      filter: blur(10px);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      padding: 6px 12px;
+      border: 1px solid rgba(115, 229, 255, 0.28);
+      border-radius: 999px;
+      color: var(--cyan);
+      font-size: 12px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      background: rgba(115, 229, 255, 0.08);
+    }
+
+    h1 {
+      margin: 16px 0 12px;
+      font-size: clamp(34px, 5vw, 64px);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+    }
+
+    .subtitle {
+      max-width: 900px;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.8;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 26px;
+    }
+
+    .metric {
+      padding: 18px 18px 16px;
+      border: 1px solid rgba(130, 168, 255, 0.16);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(8px);
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .metric strong {
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .section {
+      margin-top: 26px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .section-title {
+      margin: 0 0 18px;
+      font-size: 24px;
+      letter-spacing: -0.03em;
+    }
+
+    .section-note {
+      margin: -6px 0 20px;
+      color: var(--muted);
+      line-height: 1.75;
+    }
+
+    .flowline {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .flow-card {
+      position: relative;
+      padding: 18px;
+      border-radius: 22px;
+      background: linear-gradient(180deg, rgba(20, 28, 41, 0.96), rgba(15, 21, 31, 0.92));
+      border: 1px solid rgba(130, 168, 255, 0.14);
+      min-height: 190px;
+    }
+
+    .flow-card:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      top: 50%;
+      right: -14px;
+      transform: translateY(-50%);
+      color: rgba(130, 168, 255, 0.75);
+      font-size: 26px;
+      font-weight: 700;
+    }
+
+    .tag {
+      display: inline-block;
+      margin-bottom: 10px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #08111c;
+      font-weight: 700;
+    }
+
+    .tag.input { background: var(--cyan); }
+    .tag.data { background: var(--green); }
+    .tag.encoder { background: var(--blue); }
+    .tag.flow { background: var(--violet); }
+    .tag.output { background: var(--gold); }
+
+    .flow-card h3,
+    .grid-card h3 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+
+    .flow-card p,
+    .grid-card p,
+    .grid-card li {
+      color: var(--muted);
+      line-height: 1.75;
+      font-size: 14px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 18px;
+    }
+
+    .grid-card {
+      padding: 22px;
+      border-radius: 22px;
+      background: var(--card);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .block-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .block {
+      display: grid;
+      grid-template-columns: 130px 1fr;
+      gap: 14px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(130, 168, 255, 0.1);
+    }
+
+    .block strong {
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .pill {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.03);
+      font-size: 13px;
+    }
+
+    .codebox {
+      margin-top: 18px;
+      padding: 18px;
+      border-radius: 18px;
+      background: #0a1017;
+      border: 1px solid rgba(115, 229, 255, 0.12);
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+      color: #c4f2ff;
+      line-height: 1.8;
+      white-space: pre-wrap;
+    }
+
+    .footer-note {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.8;
+    }
+
+    @media (max-width: 1100px) {
+      .metrics,
+      .flowline,
+      .grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .flow-card:not(:last-child)::after {
+        display: none;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .shell {
+        width: min(100% - 24px, 1400px);
+      }
+
+      .hero,
+      .section {
+        padding: 22px;
+        border-radius: 22px;
+      }
+
+      .metrics,
+      .flowline,
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .block {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">Time-Domain SGWB Inference</div>
+      <h1>TimeFlow V2 模型结构展示</h1>
+      <p class="subtitle">
+        该模型保留原始时域输入，使用双探测器 <strong>H1 + L1</strong> 波形作为条件信息，
+        先通过残差一维卷积编码器提取长时序特征，再用条件归一化流学习
+        <strong>p(θ | x)</strong>，输出 10 维种群超参数的联合后验分布。
+      </p>
+
+      <div class="metrics">
+        <div class="metric">
+          <span>Input Length</span>
+          <strong>524288</strong>
+        </div>
+        <div class="metric">
+          <span>Input Channels</span>
+          <strong>H1 + L1</strong>
+        </div>
+        <div class="metric">
+          <span>Context Dim</span>
+          <strong>256</strong>
+        </div>
+        <div class="metric">
+          <span>Posterior Dim</span>
+          <strong>10</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">整体流程</h2>
+      <p class="section-note">
+        从切分好的 `.npy` 原始时域样本出发，经过数据预处理、时域编码、条件 flow 建模，
+        最终得到 10 维物理超参数的联合后验。
+      </p>
+      <div class="flowline">
+        <article class="flow-card">
+          <div class="tag input">Input</div>
+          <h3>原始波形输入</h3>
+          <p>读取 H1 / L1 切片后的 `.npy` 文件，单个 segment 长度为 524288。</p>
+        </article>
+        <article class="flow-card">
+          <div class="tag data">Preprocess</div>
+          <h3>数据预处理</h3>
+          <p>每个通道乘以 `1e23` 后再做去均值；标签删除原始第 3 个分量并做 z-score 标准化。</p>
+        </article>
+        <article class="flow-card">
+          <div class="tag encoder">Encoder</div>
+          <h3>TemporalEncoder1D</h3>
+          <p>通过 stem + 7 个残差卷积块，逐步压缩长度并扩大感受野，提取全局时域证据。</p>
+        </article>
+        <article class="flow-card">
+          <div class="tag flow">Flow</div>
+          <h3>Conditional Flow</h3>
+          <p>用 6 层随机置换 + 自回归样条变换，对 10 维参数联合分布进行条件建模。</p>
+        </article>
+        <article class="flow-card">
+          <div class="tag output">Output</div>
+          <h3>后验输出</h3>
+          <p>训练时最小化 NLL；推理时从 `p(θ | x)` 中采样得到参数后验样本。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">编码器结构</h2>
+      <div class="grid">
+        <article class="grid-card">
+          <h3>TemporalEncoder1D</h3>
+          <p>
+            该编码器替代了旧版的 `flatten + 大全连接` 结构。核心思路是：
+            用更深的时域残差网络建立跨长时间尺度的表征，再用全局池化汇聚统计信息。
+          </p>
+          <div class="block-list">
+            <div class="block">
+              <strong>Stem</strong>
+              <div>Conv1d(`in_channels → 24`, kernel=15, stride=2) + GroupNorm + GELU</div>
+            </div>
+            <div class="block">
+              <strong>Block 1</strong>
+              <div>ResidualConvBlock(`24 → 32`, stride=2, dilation=1)</div>
+            </div>
+            <div class="block">
+              <strong>Block 2</strong>
+              <div>ResidualConvBlock(`32 → 48`, stride=2, dilation=1)</div>
+            </div>
+            <div class="block">
+              <strong>Block 3</strong>
+              <div>ResidualConvBlock(`48 → 64`, stride=2, dilation=2)</div>
+            </div>
+            <div class="block">
+              <strong>Block 4</strong>
+              <div>ResidualConvBlock(`64 → 96`, stride=2, dilation=2)</div>
+            </div>
+            <div class="block">
+              <strong>Block 5</strong>
+              <div>ResidualConvBlock(`96 → 128`, stride=2, dilation=4)</div>
+            </div>
+            <div class="block">
+              <strong>Block 6</strong>
+              <div>ResidualConvBlock(`128 → 160`, stride=2, dilation=4)</div>
+            </div>
+            <div class="block">
+              <strong>Block 7</strong>
+              <div>ResidualConvBlock(`160 → 192`, stride=2, dilation=8)</div>
+            </div>
+          </div>
+        </article>
+
+        <article class="grid-card">
+          <h3>池化与投影</h3>
+          <p>
+            经过残差块之后，模型不再使用超大的展平向量，而是直接做全局池化来得到紧凑、稳定的
+            高层语义表示。
+          </p>
+          <div class="block-list">
+            <div class="block">
+              <strong>Avg Pool</strong>
+              <div>AdaptiveAvgPool1d(1) 提取全局平均统计量</div>
+            </div>
+            <div class="block">
+              <strong>Max Pool</strong>
+              <div>AdaptiveMaxPool1d(1) 保留显著峰值响应</div>
+            </div>
+            <div class="block">
+              <strong>Concat</strong>
+              <div>将两路池化结果拼接成 384 维特征</div>
+            </div>
+            <div class="block">
+              <strong>Projector</strong>
+              <div>Linear(384→256) + GELU + LayerNorm + Linear(256→context_dim)</div>
+            </div>
+          </div>
+          <div class="pill-row">
+            <div class="pill">默认 `context_dim = 256`</div>
+            <div class="pill">支持单通道 / 双通道输入</div>
+            <div class="pill">更适合长时域原始信号</div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">条件归一化流</h2>
+      <div class="grid">
+        <article class="grid-card">
+          <h3>GWFlowModelV2</h3>
+          <p>
+            Flow 部分以编码器输出的 context 为条件，对 10 维参数向量 `θ` 建立联合后验模型。
+            这样不仅能给出点估计，还能直接给出参数不确定度与参数间相关性。
+          </p>
+          <div class="pill-row">
+            <div class="pill">Base Distribution = StandardNormal(10)</div>
+            <div class="pill">Flow Layers = 6</div>
+            <div class="pill">Flow Hidden = 256</div>
+            <div class="pill">Spline Bins = 8</div>
+            <div class="pill">Tail Bound = 3.0</div>
+          </div>
+          <div class="codebox">for each flow layer:
+  RandomPermutation(features=10)
+  MaskedPiecewiseRationalQuadraticAutoregressiveTransform(
+      features=10,
+      hidden_features=256,
+      context_features=256,
+      num_blocks=2,
+      use_residual_blocks=True,
+      tails="linear",
+      tail_bound=3.0,
+      num_bins=8
+  )</div>
+        </article>
+
+        <article class="grid-card">
+          <h3>训练与推理方式</h3>
+          <p>
+            训练阶段，模型接收 `(theta, x)`，直接返回负对数似然作为 loss；
+            推理阶段，给定一个波形样本 `x`，从 `p(θ | x)` 中采样，得到完整后验样本集。
+          </p>
+          <div class="block-list">
+            <div class="block">
+              <strong>Train</strong>
+              <div>`loss = -log p(theta | x)`，最小化 NLL</div>
+            </div>
+            <div class="block">
+              <strong>Infer</strong>
+              <div>`theta_samples ~ p(theta | x)`，用于画 posterior</div>
+            </div>
+            <div class="block">
+              <strong>Optimizer</strong>
+              <div>AdamW + ReduceLROnPlateau + gradient clipping</div>
+            </div>
+            <div class="block">
+              <strong>AMP</strong>
+              <div>CUDA 下使用 autocast 与 GradScaler</div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">当前训练配置</h2>
+      <p class="section-note">
+        下面这部分对应 `scripts/timeflow_v2/train_flow.py` 中当前写死的默认配置，方便你快速核对。
+      </p>
+      <div class="codebox">USE_L1 = True
+TRAIN_SAMPLE_STEP = 100
+VAL_SAMPLE_STEP = 1
+
+BATCH_SIZE = 16
+EPOCHS = 100
+LEARNING_RATE = 5e-5
+WEIGHT_DECAY = 1e-4
+NUM_WORKERS = 0
+CONTEXT_DIM = 256
+FLOW_LAYERS = 6
+FLOW_HIDDEN = 256
+SEED = 42</div>
+      <p class="footer-note">
+        如果后续你修改了 `train_flow.py` 里的超参数，这个 HTML 也建议同步更新，这样汇报时更直观。
+      </p>
+    </section>
+  </main>
+</body>
+</html>
