@@ -352,18 +352,6 @@ def main() -> None:
             reserved = torch.cuda.memory_reserved(0) / 1024 ** 3
             print(f"gpu_reserved={reserved:.2f} GB")
 
-        latest_payload = build_checkpoint_payload(
-            model=model,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            scaler=scaler,
-            train_dataset=train_dataset,
-            best_val_loss=best_val_loss,
-            epoch=epoch,
-        )
-        torch.save(latest_payload, latest_checkpoint_path)
-        print("Saved latest checkpoint.")
-
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_payload = build_checkpoint_payload(
@@ -377,6 +365,18 @@ def main() -> None:
             )
             torch.save(best_payload, best_checkpoint_path)
             print("Saved new best checkpoint.")
+
+        latest_payload = build_checkpoint_payload(
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            scaler=scaler,
+            train_dataset=train_dataset,
+            best_val_loss=best_val_loss,
+            epoch=epoch,
+        )
+        torch.save(latest_payload, latest_checkpoint_path)
+        print("Saved latest checkpoint.")
 
     test_loss = evaluate(model, test_loader, device, desc="Test")
     total_minutes = (time.time() - start_time) / 60.0

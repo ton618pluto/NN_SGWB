@@ -42,6 +42,7 @@ FLOW_HIDDEN = 256
 SEED = 42
 DRY_RUN = False
 AUTO_RESUME = True
+GPU_INDEX = 1
 OUTPUT_DIR = Path(__file__).resolve().parent / "outputs"
 BEST_CHECKPOINT_NAME = "best_flow_v5.pt"
 LATEST_CHECKPOINT_NAME = "latest_flow_v5.pt"
@@ -233,7 +234,7 @@ def try_resume_training(
 def main() -> None:
     set_seed(SEED)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(f"cuda:{GPU_INDEX}" if torch.cuda.is_available() else "cpu")
     train_l1_dir = TRAIN_L1_DIR if USE_L1 else None
 
     print(f"Device: {device}")
@@ -352,18 +353,6 @@ def main() -> None:
             reserved = torch.cuda.memory_reserved(0) / 1024 ** 3
             print(f"gpu_reserved={reserved:.2f} GB")
 
-        latest_payload = build_checkpoint_payload(
-            model=model,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            scaler=scaler,
-            train_dataset=train_dataset,
-            best_val_loss=best_val_loss,
-            epoch=epoch,
-        )
-        torch.save(latest_payload, latest_checkpoint_path)
-        print("Saved latest checkpoint.")
-
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_payload = build_checkpoint_payload(
@@ -377,6 +366,18 @@ def main() -> None:
             )
             torch.save(best_payload, best_checkpoint_path)
             print("Saved new best checkpoint.")
+
+        latest_payload = build_checkpoint_payload(
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            scaler=scaler,
+            train_dataset=train_dataset,
+            best_val_loss=best_val_loss,
+            epoch=epoch,
+        )
+        torch.save(latest_payload, latest_checkpoint_path)
+        print("Saved latest checkpoint.")
 
     test_loss = evaluate(model, test_loader, device, desc="Test")
     total_minutes = (time.time() - start_time) / 60.0
