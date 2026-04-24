@@ -27,6 +27,8 @@ parameter_names = {
     'beta_q': 'Mass Ratio Index (beta_q)',
 }
 
+excluded_parameters = {'alpha_z', 'beta_z'}
+
 
 # 打印参数范围和统计信息（print 语句保留中文）
 def print_param_ranges(path):
@@ -37,6 +39,8 @@ def print_param_ranges(path):
         print("-" * 100)
 
         for key in data.files:
+            if key in excluded_parameters:
+                continue
             values = data[key]
             v_mean, v_std = np.mean(values), np.std(values)
             v_min, v_max = np.min(values), np.max(values)
@@ -59,7 +63,7 @@ def save_individual_distributions(file_path, output_dir='hyperparam_distribution
 
     try:
         data = np.load(file_path)
-        keys = data.files
+        keys = [key for key in data.files if key not in excluded_parameters]
 
         for key in keys:
             values = data[key]
@@ -88,7 +92,7 @@ def save_individual_distributions(file_path, output_dir='hyperparam_distribution
 def plot_param_distributions(path, save_name='./hyperparam_distributions/joint_hyperparam_distributions.png'):
     try:
         data = np.load(path)
-        keys = sorted(list(data.files))
+        keys = sorted([key for key in data.files if key not in excluded_parameters])
         num_params = len(keys)
 
         cols = 3

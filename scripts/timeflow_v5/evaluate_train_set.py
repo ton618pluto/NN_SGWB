@@ -34,9 +34,9 @@ else:
 
 
 NUM_POSTERIOR_SAMPLES = 800
-OUTPUT_DIR = Path(__file__).resolve().parent / "test_fig"
-OUTPUT_FIG_NAME = "test_set_param_mae_v5.png"
-OUTPUT_TXT_NAME = "test_set_metrics_v5.txt"
+OUTPUT_DIR = Path(__file__).resolve().parent / "train_fig"
+OUTPUT_FIG_NAME = "train_set_param_mae_v5.png"
+OUTPUT_TXT_NAME = "train_set_metrics_v5.txt"
 
 # Parameter ranges are aligned with scripts/draw_hyperparameters_v2.py
 # and follow eval_utils.PARAMETER_NAMES order for the v5 label set.
@@ -73,11 +73,11 @@ def save_metrics_text(
     nll_per_sample: np.ndarray,
 ) -> None:
     lines = [
-        f"num_test_samples: {overall_mae_per_sample.shape[0]}",
+        f"num_train_samples: {overall_mae_per_sample.shape[0]}",
         f"overall_mae_mean: {overall_mae_per_sample.mean():.8f}",
         f"overall_mae_std: {overall_mae_per_sample.std():.8f}",
-        f"test_nll_mean: {nll_per_sample.mean():.8f}",
-        f"test_nll_std: {nll_per_sample.std():.8f}",
+        f"train_nll_mean: {nll_per_sample.mean():.8f}",
+        f"train_nll_std: {nll_per_sample.std():.8f}",
         "",
         "parameter,range_width,mae_mean,mae_std,mae_range_norm_mean,coverage68,coverage95,ci68_width_mean,ci68_width_std,ci68_width_range_norm_mean,ci95_width_mean,ci95_width_std,ci95_width_range_norm_mean",
     ]
@@ -128,7 +128,7 @@ def plot_parameter_mae(
     ax.set_xticks(x)
     ax.set_xticklabels(parameter_names, rotation=25, ha="right")
     ax.set_ylabel("MAE", fontsize=10)
-    ax.set_title("V5 model per-parameter MAE on test split", fontsize=13)
+    ax.set_title("V5 model per-parameter MAE on train split", fontsize=13)
     ax.grid(axis="y", alpha=0.25)
 
     fig.tight_layout()
@@ -138,7 +138,7 @@ def plot_parameter_mae(
 
 
 @torch.inference_mode()
-def compute_test_nll(model, waveform: torch.Tensor, label_normalized: torch.Tensor, device: torch.device) -> float:
+def compute_train_nll(model, waveform: torch.Tensor, label_normalized: torch.Tensor, device: torch.device) -> float:
     theta = label_normalized.unsqueeze(0).to(device)
     x = waveform.unsqueeze(0).to(device)
     return float((-model.log_prob(theta, x)).item())
@@ -228,11 +228,11 @@ def main() -> None:
     print(f"Checkpoint: {CHECKPOINT_PATH}")
 
     checkpoint = load_checkpoint(CHECKPOINT_PATH, device)
-    dataset = build_split_dataset(checkpoint, split_name="test")
+    dataset = build_split_dataset(checkpoint, split_name="train")
     model = build_model(checkpoint, device)
 
     eval_count = len(dataset)
-    print(f"Evaluating full test split: {eval_count} samples...")
+    print(f"Evaluating full train split: {eval_count} samples...")
 
     per_sample_param_maes = []
     per_sample_param_coverage68 = []
@@ -242,7 +242,7 @@ def main() -> None:
     overall_maes = []
     nll_values = []
 
-    progress = tqdm(range(eval_count), desc="Evaluating v5 test split", unit="sample")
+    progress = tqdm(range(eval_count), desc="Evaluating v5 train split", unit="sample")
     for sample_index in progress:
         waveform, label_normalized = dataset[sample_index]
         label_true = inverse_label_normalization(
@@ -261,7 +261,7 @@ def main() -> None:
 
         param_mae = np.abs(posterior_mean - label_true)
         param_coverage68, param_coverage95, param_ci68_width, param_ci95_width = summarize_posterior_intervals(posterior_samples, label_true)
-        nll = compute_test_nll(model, waveform, label_normalized, device)
+        nll = compute_train_nll(model, waveform, label_normalized, device)
 
         per_sample_param_maes.append(param_mae)
         per_sample_param_coverage68.append(param_coverage68)
@@ -316,8 +316,8 @@ def main() -> None:
 
     print(f"Saved figure: {fig_path}")
     print(f"Saved metrics: {txt_path}")
-    print(f"Overall test MAE mean: {overall_maes_array.mean():.6f}")
-    print(f"Overall test NLL mean: {nll_values_array.mean():.6f}")
+    print(f"Overall train MAE mean: {overall_maes_array.mean():.6f}")
+    print(f"Overall train NLL mean: {nll_values_array.mean():.6f}")
     print_parameter_diagnostics(
         PARAMETER_NAMES,
         parameter_range_widths,

@@ -33,16 +33,14 @@ else:
     )
 
 
+NUM_TEST_SAMPLES = 100
 NUM_POSTERIOR_SAMPLES = 800
 OUTPUT_DIR = Path(__file__).resolve().parent / "test_fig"
-OUTPUT_FIG_NAME = "test_set_param_mae_v5.png"
-OUTPUT_TXT_NAME = "test_set_metrics_v5.txt"
+OUTPUT_FIG_NAME = "test_set_param_mae_v6.png"
+OUTPUT_TXT_NAME = "test_set_metrics_v6.txt"
 
-# Parameter ranges are aligned with scripts/draw_hyperparameters_v2.py
-# and follow eval_utils.PARAMETER_NAMES order for the v5 label set.
 PARAMETER_RANGES = {
     "zp": (1.4, 2.4),
-    "alpha_z": (2.1, 3.6),
     "alpha_m": (3.0, 3.5),
     "m_max": (10.0, 100.0),
     "delta_m": (0.0, 10.0),
@@ -128,7 +126,7 @@ def plot_parameter_mae(
     ax.set_xticks(x)
     ax.set_xticklabels(parameter_names, rotation=25, ha="right")
     ax.set_ylabel("MAE", fontsize=10)
-    ax.set_title("V5 model per-parameter MAE on test split", fontsize=13)
+    ax.set_title("V6 model per-parameter MAE on test split", fontsize=13)
     ax.grid(axis="y", alpha=0.25)
 
     fig.tight_layout()
@@ -223,7 +221,7 @@ def print_parameter_diagnostics(
 
 
 def main() -> None:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
     print(f"Device: {device}")
     print(f"Checkpoint: {CHECKPOINT_PATH}")
 
@@ -231,8 +229,8 @@ def main() -> None:
     dataset = build_split_dataset(checkpoint, split_name="test")
     model = build_model(checkpoint, device)
 
-    eval_count = len(dataset)
-    print(f"Evaluating full test split: {eval_count} samples...")
+    eval_count = min(NUM_TEST_SAMPLES, len(dataset))
+    print(f"Evaluating {eval_count} test samples...")
 
     per_sample_param_maes = []
     per_sample_param_coverage68 = []
@@ -242,7 +240,7 @@ def main() -> None:
     overall_maes = []
     nll_values = []
 
-    progress = tqdm(range(eval_count), desc="Evaluating v5 test split", unit="sample")
+    progress = tqdm(range(eval_count), desc="Evaluating v6 test split", unit="sample")
     for sample_index in progress:
         waveform, label_normalized = dataset[sample_index]
         label_true = inverse_label_normalization(

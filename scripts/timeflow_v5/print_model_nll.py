@@ -21,8 +21,7 @@ CURRENT_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = CURRENT_DIR / "outputs"
 BEST_CHECKPOINT_PATH = OUTPUT_DIR / "best_flow_v5.pt"
 LATEST_CHECKPOINT_PATH = OUTPUT_DIR / "latest_flow_v5.pt"
-RUN_CONFIG_PATH = OUTPUT_DIR / "run_config.json"
-RUN_CONFIG_RESUME_PATH = OUTPUT_DIR / "run_config_resume.json"
+RUN_CONFIG_PATH = OUTPUT_DIR / "run_config_resume.json"
 SPLIT_MANIFEST_PATH = OUTPUT_DIR / "data_split.json"
 BATCH_SIZE = 64
 NUM_WORKERS = 0
@@ -48,11 +47,9 @@ def choose_checkpoint_path() -> Path:
 def choose_run_config_path() -> Path:
     if RUN_CONFIG_PATH.exists():
         return RUN_CONFIG_PATH
-    if RUN_CONFIG_RESUME_PATH.exists():
-        return RUN_CONFIG_RESUME_PATH
     raise FileNotFoundError(
         f"No run config found in {OUTPUT_DIR}. "
-        f"Expected {RUN_CONFIG_PATH.name} or {RUN_CONFIG_RESUME_PATH.name}."
+        f"Expected {RUN_CONFIG_PATH.name}."
     )
 
 

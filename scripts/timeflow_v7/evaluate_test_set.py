@@ -35,43 +35,19 @@ else:
 
 NUM_POSTERIOR_SAMPLES = 800
 OUTPUT_DIR = Path(__file__).resolve().parent / "test_fig"
-OUTPUT_FIG_NAME = "test_set_param_mae_v5.png"
-OUTPUT_TXT_NAME = "test_set_metrics_v5.txt"
+OUTPUT_FIG_NAME = "test_set_param_mae_v7.png"
+OUTPUT_TXT_NAME = "test_set_metrics_v7.txt"
 
-# Parameter ranges are aligned with scripts/draw_hyperparameters_v2.py
-# and follow eval_utils.PARAMETER_NAMES order for the v5 label set.
 PARAMETER_RANGES = {
-    "zp": (1.4, 2.4),
-    "alpha_z": (2.1, 3.6),
     "alpha_m": (3.0, 3.5),
-    "m_max": (10.0, 100.0),
     "delta_m": (0.0, 10.0),
-    "m_min": (2.0, 10.0),
     "lambda_peak": (0.02, 0.06),
     "mu_m": (33.2, 35.4),
-    "sigma_m": (3.52, 3.60),
     "beta_q": (-5.0, 5.0),
 }
 
 
-def save_metrics_text(
-    output_path: Path,
-    parameter_names: list[str],
-    parameter_range_widths: np.ndarray,
-    per_param_mae_mean: np.ndarray,
-    per_param_mae_std: np.ndarray,
-    per_param_mae_range_norm_mean: np.ndarray,
-    per_param_coverage68: np.ndarray,
-    per_param_coverage95: np.ndarray,
-    per_param_ci68_width_mean: np.ndarray,
-    per_param_ci68_width_std: np.ndarray,
-    per_param_ci68_width_range_norm_mean: np.ndarray,
-    per_param_ci95_width_mean: np.ndarray,
-    per_param_ci95_width_std: np.ndarray,
-    per_param_ci95_width_range_norm_mean: np.ndarray,
-    overall_mae_per_sample: np.ndarray,
-    nll_per_sample: np.ndarray,
-) -> None:
+def save_metrics_text(output_path: Path, parameter_names: list[str], parameter_range_widths: np.ndarray, per_param_mae_mean: np.ndarray, per_param_mae_std: np.ndarray, per_param_mae_range_norm_mean: np.ndarray, per_param_coverage68: np.ndarray, per_param_coverage95: np.ndarray, per_param_ci68_width_mean: np.ndarray, per_param_ci68_width_std: np.ndarray, per_param_ci68_width_range_norm_mean: np.ndarray, per_param_ci95_width_mean: np.ndarray, per_param_ci95_width_std: np.ndarray, per_param_ci95_width_range_norm_mean: np.ndarray, overall_mae_per_sample: np.ndarray, nll_per_sample: np.ndarray) -> None:
     lines = [
         f"num_test_samples: {overall_mae_per_sample.shape[0]}",
         f"overall_mae_mean: {overall_mae_per_sample.mean():.8f}",
@@ -82,55 +58,25 @@ def save_metrics_text(
         "parameter,range_width,mae_mean,mae_std,mae_range_norm_mean,coverage68,coverage95,ci68_width_mean,ci68_width_std,ci68_width_range_norm_mean,ci95_width_mean,ci95_width_std,ci95_width_range_norm_mean",
     ]
     for name, range_width, mae_mean, mae_std, mae_range_norm_mean, coverage68, coverage95, ci68_width_mean, ci68_width_std, ci68_width_range_norm_mean, ci95_width_mean, ci95_width_std, ci95_width_range_norm_mean in zip(
-        parameter_names,
-        parameter_range_widths,
-        per_param_mae_mean,
-        per_param_mae_std,
-        per_param_mae_range_norm_mean,
-        per_param_coverage68,
-        per_param_coverage95,
-        per_param_ci68_width_mean,
-        per_param_ci68_width_std,
-        per_param_ci68_width_range_norm_mean,
-        per_param_ci95_width_mean,
-        per_param_ci95_width_std,
-        per_param_ci95_width_range_norm_mean,
+        parameter_names, parameter_range_widths, per_param_mae_mean, per_param_mae_std, per_param_mae_range_norm_mean, per_param_coverage68, per_param_coverage95, per_param_ci68_width_mean, per_param_ci68_width_std, per_param_ci68_width_range_norm_mean, per_param_ci95_width_mean, per_param_ci95_width_std, per_param_ci95_width_range_norm_mean
     ):
         lines.append(
-            f"{name},{range_width:.8f},{mae_mean:.8f},{mae_std:.8f},{mae_range_norm_mean:.8f},"
-            f"{coverage68:.8f},{coverage95:.8f},{ci68_width_mean:.8f},{ci68_width_std:.8f},{ci68_width_range_norm_mean:.8f},"
-            f"{ci95_width_mean:.8f},{ci95_width_std:.8f},{ci95_width_range_norm_mean:.8f}"
+            f"{name},{range_width:.8f},{mae_mean:.8f},{mae_std:.8f},{mae_range_norm_mean:.8f},{coverage68:.8f},{coverage95:.8f},{ci68_width_mean:.8f},{ci68_width_std:.8f},{ci68_width_range_norm_mean:.8f},{ci95_width_mean:.8f},{ci95_width_std:.8f},{ci95_width_range_norm_mean:.8f}"
         )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def plot_parameter_mae(
-    parameter_names: list[str],
-    per_param_mae_mean: np.ndarray,
-    per_param_mae_std: np.ndarray,
-    output_path: Path,
-) -> None:
-    fig, ax = plt.subplots(figsize=(12, 6))
+def plot_parameter_mae(parameter_names: list[str], per_param_mae_mean: np.ndarray, per_param_mae_std: np.ndarray, output_path: Path) -> None:
+    fig, ax = plt.subplots(figsize=(10, 5))
     fig.patch.set_facecolor("white")
-
     x = np.arange(len(parameter_names))
-    ax.bar(
-        x,
-        per_param_mae_mean,
-        yerr=per_param_mae_std,
-        color="#61d9a8",
-        alpha=0.88,
-        capsize=4,
-        edgecolor="#1f7a5c",
-        linewidth=0.6,
-    )
+    ax.bar(x, per_param_mae_mean, yerr=per_param_mae_std, color="#61d9a8", alpha=0.88, capsize=4, edgecolor="#1f7a5c", linewidth=0.6)
     ax.set_xticks(x)
-    ax.set_xticklabels(parameter_names, rotation=25, ha="right")
+    ax.set_xticklabels(parameter_names, rotation=20, ha="right")
     ax.set_ylabel("MAE", fontsize=10)
-    ax.set_title("V5 model per-parameter MAE on test split", fontsize=13)
+    ax.set_title("V7 model per-parameter MAE on test split", fontsize=13)
     ax.grid(axis="y", alpha=0.25)
-
     fig.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=220)
@@ -144,10 +90,7 @@ def compute_test_nll(model, waveform: torch.Tensor, label_normalized: torch.Tens
     return float((-model.log_prob(theta, x)).item())
 
 
-def summarize_posterior_intervals(
-    posterior_samples: np.ndarray,
-    label_true: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def summarize_posterior_intervals(posterior_samples: np.ndarray, label_true: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     q16 = np.percentile(posterior_samples, 16, axis=0)
     q84 = np.percentile(posterior_samples, 84, axis=0)
     q025 = np.percentile(posterior_samples, 2.5, axis=0)
@@ -160,77 +103,27 @@ def summarize_posterior_intervals(
 
 
 def get_parameter_range_widths(parameter_names: list[str]) -> np.ndarray:
-    widths = []
-    for name in parameter_names:
-        if name not in PARAMETER_RANGES:
-            raise KeyError(f"Missing parameter range for: {name}")
-        low, high = PARAMETER_RANGES[name]
-        widths.append(float(high - low))
-    return np.asarray(widths, dtype=np.float64)
+    return np.asarray([PARAMETER_RANGES[name][1] - PARAMETER_RANGES[name][0] for name in parameter_names], dtype=np.float64)
 
 
-def print_parameter_diagnostics(
-    parameter_names: list[str],
-    parameter_range_widths: np.ndarray,
-    per_param_mae_mean: np.ndarray,
-    per_param_mae_range_norm_mean: np.ndarray,
-    per_param_coverage68: np.ndarray,
-    per_param_coverage95: np.ndarray,
-    per_param_ci68_width_mean: np.ndarray,
-    per_param_ci68_width_range_norm_mean: np.ndarray,
-    per_param_ci95_width_mean: np.ndarray,
-    per_param_ci95_width_range_norm_mean: np.ndarray,
-) -> None:
-    header = (
-        f"{'param':<12}"
-        f"{'range':>12}"
-        f"{'mae_mean':>14}"
-        f"{'mae/rng':>12}"
-        f"{'cov68':>10}"
-        f"{'cov95':>10}"
-        f"{'ci68':>12}"
-        f"{'ci68/r':>10}"
-        f"{'ci95':>12}"
-        f"{'ci95/r':>10}"
-    )
+def print_parameter_diagnostics(parameter_names: list[str], parameter_range_widths: np.ndarray, per_param_mae_mean: np.ndarray, per_param_mae_range_norm_mean: np.ndarray, per_param_coverage68: np.ndarray, per_param_coverage95: np.ndarray, per_param_ci68_width_mean: np.ndarray, per_param_ci68_width_range_norm_mean: np.ndarray, per_param_ci95_width_mean: np.ndarray, per_param_ci95_width_range_norm_mean: np.ndarray) -> None:
+    header = f"{'param':<12}{'range':>12}{'mae_mean':>14}{'mae/rng':>12}{'cov68':>10}{'cov95':>10}{'ci68':>12}{'ci68/r':>10}{'ci95':>12}{'ci95/r':>10}"
     print("\nPer-parameter diagnostics:")
     print(header)
     print("-" * len(header))
     for name, range_width, mae_mean, mae_range_norm_mean, coverage68, coverage95, ci68_width_mean, ci68_width_range_norm_mean, ci95_width_mean, ci95_width_range_norm_mean in zip(
-        parameter_names,
-        parameter_range_widths,
-        per_param_mae_mean,
-        per_param_mae_range_norm_mean,
-        per_param_coverage68,
-        per_param_coverage95,
-        per_param_ci68_width_mean,
-        per_param_ci68_width_range_norm_mean,
-        per_param_ci95_width_mean,
-        per_param_ci95_width_range_norm_mean,
+        parameter_names, parameter_range_widths, per_param_mae_mean, per_param_mae_range_norm_mean, per_param_coverage68, per_param_coverage95, per_param_ci68_width_mean, per_param_ci68_width_range_norm_mean, per_param_ci95_width_mean, per_param_ci95_width_range_norm_mean
     ):
-        print(
-            f"{name:<12}"
-            f"{range_width:>12.6f}"
-            f"{mae_mean:>14.6f}"
-            f"{mae_range_norm_mean:>12.3f}"
-            f"{coverage68:>10.3f}"
-            f"{coverage95:>10.3f}"
-            f"{ci68_width_mean:>12.6f}"
-            f"{ci68_width_range_norm_mean:>10.3f}"
-            f"{ci95_width_mean:>12.6f}"
-            f"{ci95_width_range_norm_mean:>10.3f}"
-        )
+        print(f"{name:<12}{range_width:>12.6f}{mae_mean:>14.6f}{mae_range_norm_mean:>12.3f}{coverage68:>10.3f}{coverage95:>10.3f}{ci68_width_mean:>12.6f}{ci68_width_range_norm_mean:>10.3f}{ci95_width_mean:>12.6f}{ci95_width_range_norm_mean:>10.3f}")
 
 
 def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
     print(f"Checkpoint: {CHECKPOINT_PATH}")
-
     checkpoint = load_checkpoint(CHECKPOINT_PATH, device)
     dataset = build_split_dataset(checkpoint, split_name="test")
     model = build_model(checkpoint, device)
-
     eval_count = len(dataset)
     print(f"Evaluating full test split: {eval_count} samples...")
 
@@ -242,27 +135,16 @@ def main() -> None:
     overall_maes = []
     nll_values = []
 
-    progress = tqdm(range(eval_count), desc="Evaluating v5 test split", unit="sample")
+    progress = tqdm(range(eval_count), desc="Evaluating v7 test split", unit="sample")
     for sample_index in progress:
         waveform, label_normalized = dataset[sample_index]
-        label_true = inverse_label_normalization(
-            label_normalized,
-            checkpoint["label_mean"],
-            checkpoint["label_std"],
-        )
-
+        label_true = inverse_label_normalization(label_normalized, checkpoint["label_mean"], checkpoint["label_std"])
         samples_normalized = sample_posterior(model, waveform, NUM_POSTERIOR_SAMPLES, device)
-        posterior_samples = inverse_label_normalization(
-            samples_normalized,
-            checkpoint["label_mean"],
-            checkpoint["label_std"],
-        )
+        posterior_samples = inverse_label_normalization(samples_normalized, checkpoint["label_mean"], checkpoint["label_std"])
         posterior_mean = posterior_samples.mean(axis=0)
-
         param_mae = np.abs(posterior_mean - label_true)
         param_coverage68, param_coverage95, param_ci68_width, param_ci95_width = summarize_posterior_intervals(posterior_samples, label_true)
         nll = compute_test_nll(model, waveform, label_normalized, device)
-
         per_sample_param_maes.append(param_mae)
         per_sample_param_coverage68.append(param_coverage68)
         per_sample_param_coverage95.append(param_coverage95)
@@ -295,41 +177,12 @@ def main() -> None:
     fig_path = OUTPUT_DIR / OUTPUT_FIG_NAME
     txt_path = OUTPUT_DIR / OUTPUT_TXT_NAME
     plot_parameter_mae(PARAMETER_NAMES, per_param_mae_mean, per_param_mae_std, fig_path)
-    save_metrics_text(
-        txt_path,
-        PARAMETER_NAMES,
-        parameter_range_widths,
-        per_param_mae_mean,
-        per_param_mae_std,
-        per_param_mae_range_norm_mean,
-        per_param_coverage68,
-        per_param_coverage95,
-        per_param_ci68_width_mean,
-        per_param_ci68_width_std,
-        per_param_ci68_width_range_norm_mean,
-        per_param_ci95_width_mean,
-        per_param_ci95_width_std,
-        per_param_ci95_width_range_norm_mean,
-        overall_maes_array,
-        nll_values_array,
-    )
-
+    save_metrics_text(txt_path, PARAMETER_NAMES, parameter_range_widths, per_param_mae_mean, per_param_mae_std, per_param_mae_range_norm_mean, per_param_coverage68, per_param_coverage95, per_param_ci68_width_mean, per_param_ci68_width_std, per_param_ci68_width_range_norm_mean, per_param_ci95_width_mean, per_param_ci95_width_std, per_param_ci95_width_range_norm_mean, overall_maes_array, nll_values_array)
     print(f"Saved figure: {fig_path}")
     print(f"Saved metrics: {txt_path}")
     print(f"Overall test MAE mean: {overall_maes_array.mean():.6f}")
     print(f"Overall test NLL mean: {nll_values_array.mean():.6f}")
-    print_parameter_diagnostics(
-        PARAMETER_NAMES,
-        parameter_range_widths,
-        per_param_mae_mean,
-        per_param_mae_range_norm_mean,
-        per_param_coverage68,
-        per_param_coverage95,
-        per_param_ci68_width_mean,
-        per_param_ci68_width_range_norm_mean,
-        per_param_ci95_width_mean,
-        per_param_ci95_width_range_norm_mean,
-    )
+    print_parameter_diagnostics(PARAMETER_NAMES, parameter_range_widths, per_param_mae_mean, per_param_mae_range_norm_mean, per_param_coverage68, per_param_coverage95, per_param_ci68_width_mean, per_param_ci68_width_range_norm_mean, per_param_ci95_width_mean, per_param_ci95_width_range_norm_mean)
 
 
 if __name__ == "__main__":

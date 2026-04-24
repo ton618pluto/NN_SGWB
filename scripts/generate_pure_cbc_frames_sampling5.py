@@ -13,12 +13,13 @@ SNR_THRESH = 12.0
 #start = 7000
 start = 0
 temp_idx = 0
-input_dir = './parameter_sampling_train/v3'
-output_base_dir = './training_set/v3/training_set0'
+input_dir = './parameter_sampling_train/v4'
+output_base_dir = './training_set/v4/training_set0'
 #num_populations = 8000
 num_populations = 100
 #all_jobs=44
-all_jobs=24
+# all_jobs=24
+all_jobs=5
 
 
 def process_population(pop_idx, input_dir, output_base_dir, config):
