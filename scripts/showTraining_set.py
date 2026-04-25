@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pandas as pd
 
-
-NUM = 23
-DATA_PATH = Path(__file__).resolve().parent / "training_set" / "v2" / "training_set0" / "train_idx.csv"
+#NUM = 23  # 每组超参应该具有的行数
+NUM = 4  # 每组超参应该具有的行数
+DATA_PATH = Path(__file__).resolve().parent / "training_set" / "v4" / "training_set0" / "train_idx.csv"
 
 
 def load_table(file_path: Path) -> pd.DataFrame:

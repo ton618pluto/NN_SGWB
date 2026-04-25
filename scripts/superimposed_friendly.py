@@ -2,16 +2,16 @@ from pathlib import Path
 
 from gwpy.timeseries import TimeSeries
 
-
-POP_NUMS = 200
-FRAME_NUMS = 23
+# 如果要改就改这里
+POP_NUMS = 1200   # 超参数组数
+FRAME_NUMS = 4    # 每段frame是2048s，frame_nums表示有几段frame
 DETECTORS = ["H1", "L1"]
 STRAIN_CHANNEL_SUFFIX = "TEST_INJ"
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
-SIGNAL_ROOT = SCRIPTS_DIR / "training_set" / "v3" / "training_set0"
-NOISE_ROOT_TEMPLATE = "noise_waveform_{detector}"
-OUTPUT_ROOT = SCRIPTS_DIR / "training_set_superimposed" / "v0"
+SIGNAL_ROOT = SCRIPTS_DIR / "training_set" / "v4" / "training_set0"
+NOISE_ROOT_TEMPLATE = "./noise_waveform/v1/noise_waveform_{detector}"
+OUTPUT_ROOT = SCRIPTS_DIR / "training_set_superimposed" / "v1"
 
 
 def superimpose(detector_name: str, pop_nums: int = POP_NUMS, frame_nums: int = FRAME_NUMS) -> None:

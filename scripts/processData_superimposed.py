@@ -68,7 +68,7 @@ def get_superimposed_data(d_name, base_path, save_path, labels_dict, num_splits=
 
 if __name__ == "__main__":
     detectors = ["H1", "L1"]
-    version = "v0"
+    version = "v1"    # 如果要改就改这里
 
     scripts_dir = Path(__file__).resolve().parent
     input_root = scripts_dir / "training_set_superimposed" / version
