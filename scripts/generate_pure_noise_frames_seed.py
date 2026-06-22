@@ -11,13 +11,25 @@ import numpy as np
 
 
 BASE_SEED = 123456
+#version = 'v999'   # 2048Hz
+#version = 'v9999'   # 64Hz
+version = 'v99999'   # 32Hz
+# version = 'v999'   # 数据集版本号
+start_job = 1
+#end_job = 4
+#end_job = 23
+#end_job = 43   # frame数量
+end_job = 1
+sampling_frequency = 32.0  # 采样率
+# sampling_frequency = 2048.0  # 采样率
 
 
 def generate_noiseframes_for_job(job_number: int, base_seed: int = BASE_SEED) -> None:
     duration = 2048
     start_time = (job_number - 1) * duration
     minimum_frequency = 5.0
-    sampling_frequency = 2048.0
+#    sampling_frequency = 2048.0
+    
 
     # 固定到 job 级别：同一个 job_number 多次运行结果一致，不同 job_number 仍然不同。
     job_seed = base_seed + job_number
@@ -50,7 +62,7 @@ def generate_noiseframes_for_job(job_number: int, base_seed: int = BASE_SEED) ->
             dtype=float,
         )
 
-        output_dir = f"./noise_waveform_{ifo.name}"
+        output_dir = f"./noise_waveform/{version}/noise_waveform_{ifo.name}"
         os.makedirs(output_dir, exist_ok=True)
 
         file_name = f"{ifo.name}-STRAIN-{job_number:05d}-duration.gwf"
@@ -59,8 +71,7 @@ def generate_noiseframes_for_job(job_number: int, base_seed: int = BASE_SEED) ->
 
 
 if __name__ == "__main__":
-    start_job = 1
-    end_job = 23
+
 
     total_jobs = end_job - start_job + 1
     for index, job_number in enumerate(range(start_job, end_job + 1), start=1):

@@ -4,9 +4,18 @@ import numpy as np
 
 
 duration = 2048
-jobNumber = 4
+#jobNumber = 24
+jobNumber = 11
+file_number = 20
 minimum_frequency = 10
-param_dir = Path("./parameter_sampling_train/v4")
+#version = "v6"
+#version = "v20"
+#version = "v21"
+#version = "v42"
+version = "v62"
+param_dir = Path(f"./parameter_sampling_train/{version}")
+#version = "v61"
+#param_dir = Path(f"./parameter_sampling_test/fixed_one_test_{version}")
 
 
 def estimation_t0(tc, m1, m2):
@@ -30,7 +39,7 @@ def count_events_for_job(npz_path: Path, job_index: int) -> int:
 
 
 def main() -> None:
-    npz_files = sorted(param_dir.glob("CBC_params_example*.npz"))[:10]
+    npz_files = sorted(param_dir.glob("CBC_params_example*.npz"))[:file_number]
     if not npz_files:
         raise FileNotFoundError(f"No CBC parameter files found in: {param_dir.resolve()}")
 

@@ -5,13 +5,15 @@ import numpy as np
 import pandas as pd
 from gwpy.timeseries import TimeSeries
 
+#NUM_SPLITS = 1
+NUM_SPLITS = 8
 
 def get_label(file_path):
     df = pd.read_csv(file_path)
     return {row[0]: list(row[2:]) for row in df.itertuples(index=False)}
 
 
-def get_superimposed_data(d_name, base_path, save_path, labels_dict, num_splits=8):
+def get_superimposed_data(d_name, base_path, save_path, labels_dict, num_splits=NUM_SPLITS):
     os.makedirs(save_path, exist_ok=True)
 
     if not os.path.exists(base_path):
@@ -68,7 +70,8 @@ def get_superimposed_data(d_name, base_path, save_path, labels_dict, num_splits=
 
 if __name__ == "__main__":
     detectors = ["H1", "L1"]
-    version = "v1"    # 如果要改就改这里
+    num_splits = NUM_SPLITS
+    version = "v6"    # 如果要改就改这里
 
     scripts_dir = Path(__file__).resolve().parent
     input_root = scripts_dir / "training_set_superimposed" / version
@@ -80,4 +83,4 @@ if __name__ == "__main__":
     for d_name in detectors:
         base_path = input_root / d_name
         save_path = save_root / f"{d_name}_splits"
-        get_superimposed_data(d_name, str(base_path), str(save_path), labels_dict)
+        get_superimposed_data(d_name, str(base_path), str(save_path), labels_dict, num_splits=num_splits)

@@ -158,13 +158,15 @@ def run_parameter_sampling(
 # ---------------------------------------------------------
 
 
-output_path = "./parameter_sampling_train/v3"
+version="v11"
+hyper_number=100000   # 超参数组数
+time=1/30/48
+output_path = f"./parameter_sampling_train/{version}"
 # output_path = "./parameter_sampling_val"
 # output_path = "./parameter_sampling_test"
-dataHyperPara = np.load('./joint_hyperparams_train/v3/joint_hyperparams_train_v3.npz')
+dataHyperPara = np.load(f'./joint_hyperparams_train/{version}/joint_hyperparams_train_{version}.npz')
 keys = dataHyperPara.files
 num_datasets = len(dataHyperPara[keys[0]])
-hyper_number=100
 
 for i in range(0,hyper_number):
     np.random.seed(i)
@@ -216,8 +218,11 @@ for i in range(0,hyper_number):
     num_events = run_parameter_sampling(
         sample_id=i,
         output_dir=output_path,
-        # T_obs_month=1,
-        T_obs_month=1/30/2,
+#        T_obs_month=12,
+#        T_obs_month=1/30/2/5.5,   # 1/30为一天的数据，1/30/2为半天的数据，再/6为/2个小时的数据
+#        T_obs_month=1/30/2,   # 1/30为一天的数据，1/30/2为半天的数据，再/6为/2个小时的数据
+#        T_obs_month=1/30,   # 1/30为一天的数据，1/30/2为半天的数据，再/6为/2个小时的数据
+        T_obs_month=time,   # 半个小时的数据
         zp=r_zp,
         alpha_z=r_alpha_z,
         beta_z=r_beta_z,

@@ -199,7 +199,7 @@ parameter_names = {
 
 # 文件路径
 # file_path = './parameter_sampling_train/CBC_params_example00000.npz'
-file_path = './parameter_sampling_train/v2/CBC_params_example00000.npz'
+file_path = './parameter_sampling_train/v5/CBC_params_example00003.npz'
 save_path = 'events_distribution/cbc_distributions18.png'
 
 data = print_param_ranges(file_path)

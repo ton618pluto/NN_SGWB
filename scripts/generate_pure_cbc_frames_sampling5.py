@@ -13,13 +13,25 @@ SNR_THRESH = 12.0
 #start = 7000
 start = 0
 temp_idx = 0
-input_dir = './parameter_sampling_train/v4'
-output_base_dir = './training_set/v4/training_set0'
-#num_populations = 8000
-num_populations = 100
-#all_jobs=44
+sampling_frequency = 32  # 采样率
+#version = 'v10_2'    # 数据集版本
+#version = 'v6'    # 数据集版本
+#version = 'v11'    # 数据集版本
+#version = 'v12'    # 数据集版本
+#version = 'v20'    # 数据集版本
+#version = 'v21'    # 数据集版本
+version = 'v23'    # 数据集版本
+#num_populations = 5000   # 超参数组数
+#num_populations = 100  # 超参数组数
+#num_populations = 100000   # 超参数组数
+num_populations = 200000   # 超参数组数
+#all_jobs=5     # frame数量，每段frame长2048s
+all_jobs=2     # frame数量，每段frame长2048s，这个值填比frame数+1
+#all_jobs=24
+input_dir = f'./parameter_sampling_train/{version}'
+output_base_dir = f'./training_set/{version}/training_set0'
 # all_jobs=24
-all_jobs=5
+# all_jobs=5
 
 
 def process_population(pop_idx, input_dir, output_base_dir, config):
@@ -202,7 +214,8 @@ def generate_samples(max_workers=8):
     config = {
         'samples_per_pop': 5,
         'duration': 2048,
-        'sampling_frequency': 2048,
+        # 'sampling_frequency': 2048,
+        'sampling_frequency': sampling_frequency,
         'minimum_frequency': 10,
         'reference_frequency': 25.
     }
@@ -236,4 +249,4 @@ def generate_samples(max_workers=8):
 
 if __name__ == '__main__':
     # 建议 max_workers 设为 CPU 核心数的一半或 2/3，避免内存溢出
-    generate_samples(max_workers=22)
+    generate_samples(max_workers=5)

@@ -123,9 +123,10 @@ def check_prefix_consistency(prefix_samples=100, total_samples=200, seed=42):
 
 
 if __name__ == "__main__":
-    n_samples = 1200
+    n_samples = 100000
     seed = 42
-    output_path = Path(__file__).parent / "joint_hyperparams_train" / "v4" / "joint_hyperparams_train_v4.npz"
+    version = "v11"
+    output_path = Path(__file__).parent / "joint_hyperparams_train" / version / ("joint_hyperparams_train_"+version+".npz")
 
     saved_path = save_joint_hyperparameters(output_path, n_samples=n_samples, seed=seed)
     print(f"Saved samples to: {saved_path}")

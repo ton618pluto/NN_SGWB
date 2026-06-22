@@ -1,60 +1,70 @@
 import os
-from gwpy.timeseries import TimeSeries
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
+from gwpy.timeseries import TimeSeries
+
+#output_version="v30_s"
+#NUM_SPLITS = 8
+#output_version="v45"
+#output_version="v61"
+#output_version="v62"
+output_version="v63"
+#output_version="v30_ns"
+NUM_SPLITS = 1
+#NUM_SPLITS = 8
+#version = "v10_2"
+#version = "v6"
+#version = "v11"
+#version = "v21"
+#version = "v22"
+#version = "v23"
+#version = "v30"
+#version = "v30"
+#version = "v45"
+#version = "v50"
+#version = "v61"
+#version="v62"
+version="v63"
 
 
-# 获取标签
-def getLabel(file_path):
+def get_label(file_path):
     df = pd.read_csv(file_path)
-    first_column = df.columns[0]
-    result_dict = {row[0]: list(row[2:]) for row in df.itertuples(index=False)}
+    return {row[0]: list(row[2:]) for row in df.itertuples(index=False)}
 
-    return result_dict
 
-# 获取CBC-SGWB数据
-def getSGWBData(d_name,base_path,save_path):
-    # 确保 save_path 目录存在
-    if not os.path.exists(save_path):
-        os.makedirs(save_path)
+def get_sgwb_data(d_name, base_path, save_path, labels_dict, num_splits=NUM_SPLITS):
+    os.makedirs(save_path, exist_ok=True)
 
-    # 确保 input_path 目录存在
     if not os.path.exists(base_path):
-        os.makedirs(base_path)
+        print(f"输入目录不存在: {base_path}")
+        return
 
-    # 2. 获取文件
-    files = [f for f in os.listdir(base_path) if f.endswith('.gwf')]
-    files.sort()
+    files = sorted(f for f in os.listdir(base_path) if f.endswith(".gwf"))
+    print(f"开始处理探测器 {d_name}，共 {len(files)} 个文件，每个文件切分成 {num_splits} 段")
 
-    # 试读前 10 个原文件
-    # test_files = files[:10]
-    num_splits = 8
-
-    print(f"开始处理探测器{d_name}，每个文件将切分为 {num_splits} 段...")
-    count=0
-
+    count = 0
     for filename in files:
-        # 获取标签
-        temp_filename=filename.replace(f"{d_name}-", "").replace(".gwf","")
-        print(f'文件名称：{temp_filename}')
-        label=lablesDict[temp_filename]
-        file_full_path = os.path.join(base_path, filename)
+        temp_filename = filename.replace(f"{d_name}-", "").replace(".gwf", "")
+        if temp_filename not in labels_dict:
+            print(f"跳过 {filename}: 没找到对应标签 {temp_filename}")
+            continue
 
-        # 检查是否已处理过（所有分片都存在则跳过）
+        label = labels_dict[temp_filename]
+        file_full_path = os.path.join(base_path, filename)
         base_name = os.path.splitext(filename)[0]
+
         all_splits_exist = all(
             os.path.exists(os.path.join(save_path, f"{base_name}_p{i}.npy"))
             for i in range(num_splits)
         )
         if all_splits_exist:
-            print(f"跳过已处理: {filename}")
+            print(f"跳过已处理文件: {filename}")
             continue
 
         try:
-            # 读取数据 (使用你确认过的通道名 H1:TEST_INJ)
             data = TimeSeries.read(file_full_path, channel=f"{d_name}:TEST_INJ").value
-
-            # 计算每一段的长度
             total_length = len(data)
             split_length = total_length // num_splits
 
@@ -62,51 +72,38 @@ def getSGWBData(d_name,base_path,save_path):
                 start = i * split_length
                 end = (i + 1) * split_length
                 chunk = data[start:end]
-                sample={
-                    'data':chunk,
-                    'label':label
+                sample = {
+                    "data": chunk,
+                    "label": label,
                 }
-
-                # 生成新的文件名，例如: H1-pop00299_sample04_p0.npy
-                base_name = os.path.splitext(filename)[0]
                 split_filename = f"{base_name}_p{i}.npy"
-
-                # 保存单段数据
                 np.save(os.path.join(save_path, split_filename), sample)
 
-            print(f"成功拆分并保存: {filename} -> {num_splits} files")
-            count+=1
-            if(count%20==0):
-                print(f'✅ 处理了{count}个来自探测器{d_name}的CBC-SGWB数据文件')
+            count += 1
+            if count % 100 == 0:
+                print(f"已处理 {count} 个来自探测器 {d_name} 的 CBC-SGWB 文件")
 
-        except Exception as e:
-            print(f"处理 {filename} 失败: {e}")
+        except Exception as exc:
+            print(f"处理 {filename} 失败: {exc}")
 
-    print("---")
-    print(f"全部完成，切片文件保存在: {save_path}")
+    print(f"{d_name} 处理完成，切分文件保存在: {save_path}")
 
 
-if __name__ =="__main__":
-    # 1. 路径设置
-    detectors=['H1','L1']
-    version="v3"
-    filename="training_set0"
-    input_path=f'training_set/{version}/{filename}'
+if __name__ == "__main__":
+    detectors = ["H1", "L1"]
+#    detectors = ["H1"]
+    num_splits = NUM_SPLITS
     
+    folder_name = "training_set0"
 
-    # 获取标签，键为一个SGWB文件名，值为超参数（也就是标签）
-    base_label_path = f'./{input_path}/train_idx.csv'
-    # base_label_path = './val_set/val_idx.csv'
-    # base_label_path = './test_set/test_idx.csv'
-    lablesDict = getLabel(base_label_path)
-#    print(lablesDict)
+    scripts_dir = Path(__file__).resolve().parent
+    input_root = scripts_dir / "training_set" / version / folder_name
+    save_root = scripts_dir / "processed_data_train" / output_version
 
-    for i in range(len(detectors)):
-        d_name=detectors[i]
-        base_path = f'./{input_path}/{d_name}'
-        # base_path = f'./val_set/{d_name}'
-        # base_path = f'./test_set/{d_name}'
-        save_path = f'./processed_data_train/{version}/{filename}/{d_name}_splits'  # 建议保存到子文件夹
-        # save_path = f'./processed_data_test/{d_name}_splits'  # 建议保存到子文件夹
-        getSGWBData(d_name,base_path,save_path)
+    base_label_path = input_root / "train_idx.csv"
+    labels_dict = get_label(base_label_path)
 
+    for d_name in detectors:
+        base_path = input_root / d_name
+        save_path = save_root / f"{d_name}_splits"
+        get_sgwb_data(d_name, str(base_path), str(save_path), labels_dict, num_splits=num_splits)

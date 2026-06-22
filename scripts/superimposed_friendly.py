@@ -3,20 +3,24 @@ from pathlib import Path
 from gwpy.timeseries import TimeSeries
 
 # 如果要改就改这里
-POP_NUMS = 1200   # 超参数组数
-FRAME_NUMS = 4    # 每段frame是2048s，frame_nums表示有几段frame
+#POP_NUMS = 100000   # 超参数组数
+POP_NUMS = 100   # 超参数组数
+#FRAME_NUMS = 1    # 每段frame是2048s，frame_nums表示有几段frame
+FRAME_NUMS = 23    # 每段frame是2048s，frame_nums表示有几段frame
+#version = "v8"
+version = "v6"
 DETECTORS = ["H1", "L1"]
 STRAIN_CHANNEL_SUFFIX = "TEST_INJ"
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
-SIGNAL_ROOT = SCRIPTS_DIR / "training_set" / "v4" / "training_set0"
-NOISE_ROOT_TEMPLATE = "./noise_waveform/v1/noise_waveform_{detector}"
-OUTPUT_ROOT = SCRIPTS_DIR / "training_set_superimposed" / "v1"
+SIGNAL_ROOT = SCRIPTS_DIR / "training_set" / version / "training_set0"
+NOISE_ROOT_TEMPLATE = "./noise_waveform/{version}/noise_waveform_{detector}"
+OUTPUT_ROOT = SCRIPTS_DIR / "training_set_superimposed" / version
 
 
 def superimpose(detector_name: str, pop_nums: int = POP_NUMS, frame_nums: int = FRAME_NUMS) -> None:
     signal_dir = SIGNAL_ROOT / detector_name
-    noise_dir = SCRIPTS_DIR / NOISE_ROOT_TEMPLATE.format(detector=detector_name)
+    noise_dir = SCRIPTS_DIR / NOISE_ROOT_TEMPLATE.format(version=version,detector=detector_name)
     output_dir = OUTPUT_ROOT / detector_name
     strain_channel = f"{detector_name}:{STRAIN_CHANNEL_SUFFIX}"
 

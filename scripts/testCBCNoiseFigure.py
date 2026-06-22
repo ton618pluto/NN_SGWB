@@ -1,118 +1,167 @@
-import os
+from __future__ import annotations
+
+from pathlib import Path
+
 import matplotlib.pyplot as plt
-from gwpy.timeseries import TimeSeries
-import numpy as np
+
+try:
+    from gwpy.timeseries import TimeSeries
+except ModuleNotFoundError as exc:
+    raise ModuleNotFoundError(
+        "testCBCNoiseFigure.py requires 'gwpy'. Install it in the active environment first."
+    ) from exc
 
 
+POP_NUMS = 1
+FRAME_NUMS = 2
+VERSION = "v1"
+DETECTORS = ["H1", "L1"]
+STRAIN_CHANNEL_SUFFIX = "TEST_INJ"
+BANDPASS_LOW = 5
+BANDPASS_HIGH = 20
+ZOOM_WINDOW_SECONDS = 2048.0
 
-def showSuperimposed(detector_name):
-    # --- 配置参数 ---
-    pop_nums = 1
-    frame_nums = 2
-    OUTPUT_DIR = f'./superimposed_{detector_name}/'  # 叠加信号的路径
-    SIGNAL_DIR = f'./training_set/{detector_name}/'  # 纯净信号的路径
-    PLOT_DIR = f'./plots_SGWB_noise/'  # 用于保存图片的目录
-    STRAIN_CHANNEL = f'{detector_name}:TEST_INJ'  # 确保使用您写入时使用的正确通道名
-    BANDPASS_LOW = 30  # 滤波低频截止
-    BANDPASS_HIGH = 400  # 滤波高频截止
-    for pop_num in range(pop_nums):
-        for frame_num in range(frame_nums):
-            # 构造文件路径
-            signal_path = os.path.join(SIGNAL_DIR, f'{detector_name}-pop{pop_num:05d}_sample{frame_num:02d}.gwf')
-            superimposed_path = os.path.join(OUTPUT_DIR, f'{detector_name}-SUPERIMPOSED-pop{pop_num:05d}_sample{frame_num:02d}.gwf')
+SCRIPTS_DIR = Path(__file__).resolve().parent
+SUPERIMPOSED_ROOT = SCRIPTS_DIR / "training_set_superimposed" / VERSION
+SIGNAL_ROOT = SCRIPTS_DIR / "training_set" / VERSION / "training_set0"
+PLOT_DIR = SCRIPTS_DIR / "plots_SGWB_noise"
 
-            plot_filename = f'{detector_name}-WAVEFORMS-pop{pop_num:05d}_sample{frame_num:02d}-comparison.png'
-            plot_path = os.path.join(PLOT_DIR, plot_filename)
 
-            # 创建图片输出目录
-            if not os.path.exists(PLOT_DIR):
-                os.makedirs(PLOT_DIR)
+def _safe_bandpass(series: TimeSeries, low_hz: float, high_hz: float) -> TimeSeries:
+    sample_rate = float(series.sample_rate.value)
+    nyquist = sample_rate / 2.0
+    safe_high = min(high_hz, nyquist * 0.95)
 
-            print(f"正在读取叠加文件：{superimposed_path}")
-            print(f"正在读取纯信号文件：{signal_path}")
+    if low_hz <= 0:
+        raise ValueError(f"Bandpass low cutoff must be > 0, got {low_hz}")
+    if low_hz >= safe_high:
+        raise ValueError(
+            f"Invalid bandpass for sample_rate={sample_rate:.3f} Hz: "
+            f"low={low_hz} Hz, high={high_hz} Hz, usable_high<{safe_high:.3f} Hz"
+        )
 
-            try:
-                # 1. 读取叠加后的 TimeSeries 数据
-                data_superimposed = TimeSeries.read(superimposed_path, STRAIN_CHANNEL)
-                print(f'叠加后的结果',data_superimposed)
+    if safe_high < high_hz:
+        print(
+            f"[warn] Adjusting high cutoff from {high_hz} Hz to {safe_high:.3f} Hz "
+            f"for sample_rate={sample_rate:.3f} Hz",
+        )
 
-                # 2. 读取纯信号的 TimeSeries 数据
-                data_signal = TimeSeries.read(signal_path, STRAIN_CHANNEL)
-                print(f'信号强度',data_signal)
+    return series.bandpass(low_hz, safe_high).crop(series.times.min(), series.times.max())
 
-                # 3. 对数据进行带通滤波
-                data_superimposed_filtered = data_superimposed.bandpass(BANDPASS_LOW, BANDPASS_HIGH).crop(
-                    data_superimposed.times.min(), data_superimposed.times.max()
-                )
-                data_signal_filtered = data_signal.bandpass(BANDPASS_LOW, BANDPASS_HIGH).crop(
-                    data_signal.times.min(), data_signal.times.max()
-                )
 
-                # 4. 绘制时域波形图 (使用标准的 Matplotlib)
+def show_superimposed(detector_name: str) -> None:
+    signal_dir = SIGNAL_ROOT / detector_name
+    superimposed_dir = SUPERIMPOSED_ROOT / detector_name
+    strain_channel = f"{detector_name}:{STRAIN_CHANNEL_SUFFIX}"
 
-                # 创建 Figure 和 Axes 对象
-                fig, ax1 = plt.subplots(figsize=(12, 6))
+    if not superimposed_dir.exists():
+        raise FileNotFoundError(f"Superimposed directory not found: {superimposed_dir}")
+    if not signal_dir.exists():
+        raise FileNotFoundError(f"Signal directory not found: {signal_dir}")
 
-                # **核心修正：使用 Matplotlib ax1.plot() 直接绘制数据**
+    PLOT_DIR.mkdir(parents=True, exist_ok=True)
 
-                # 绘制叠加信号 (Signal + Noise)
-                # x 轴使用 TimeSeries 的时间戳 (.times.value)
-                # y 轴使用 TimeSeries 的数值 (.value)
-                ax1.plot(
-                    data_superimposed_filtered.times.value,
-                    data_superimposed_filtered.value,
-                    label='Superimposed (Signal + Noise)',
-                    color='C0',
-                    linewidth=0.5  # 降低线宽，因为叠加数据通常较密
-                )
+    for pop_num in range(POP_NUMS):
+        for frame_num in range(FRAME_NUMS):
+            signal_path = signal_dir / f"{detector_name}-pop{pop_num:05d}_sample{frame_num:05d}.gwf"
+            superimposed_path = superimposed_dir / f"{detector_name}-SUPERIMPOSED-pop{pop_num:05d}_sample{frame_num:05d}.gwf"
+            plot_path = PLOT_DIR / f"{detector_name}-WAVEFORMS-pop{pop_num:05d}_sample{frame_num:05d}-comparison-{VERSION}.png"
 
-                # 在同一个 Axes 上绘制纯信号
-                ax1.plot(
-                    data_signal_filtered.times.value,
-                    data_signal_filtered.value,
-                    label='Injected Signal (Pure)',
-                    color='C1',
-                    linestyle='--',
-                    linewidth=1.5
-                )
+            if not superimposed_path.exists():
+                print(f"[skip] Missing superimposed file: {superimposed_path}")
+                continue
+            if not signal_path.exists():
+                print(f"[skip] Missing signal file: {signal_path}")
+                continue
 
-                # 设置 Axes 属性
-                ax1.set_ylabel('Strain (Filtered)', fontsize=14)
-                ax1.set_xlabel('Time (s)', fontsize=14)
-                ax1.set_title(f'Event {detector_name}-SUPERIMPOSED-pop{pop_num:05d}_sample{frame_num:02d}: Filtered Waveform Comparison ({BANDPASS_LOW}-{BANDPASS_HIGH} Hz)', fontsize=16)
+            print(f"[read] superimposed: {superimposed_path}")
+            print(f"[read] signal: {signal_path}")
 
-                # 标注信号可能发生的区域
-                duration = data_superimposed.duration.value
-                mid_time = data_superimposed.times.min().value + duration / 2
+            data_superimposed = TimeSeries.read(superimposed_path, strain_channel)
+            data_signal = TimeSeries.read(signal_path, strain_channel)
+            print(
+                "[info] superimposed: "
+                f"duration={data_superimposed.duration.value:.3f}s "
+                f"sample_rate={data_superimposed.sample_rate.value:.3f}Hz "
+                f"samples={len(data_superimposed)}"
+            )
+            print(
+                "[info] signal: "
+                f"duration={data_signal.duration.value:.3f}s "
+                f"sample_rate={data_signal.sample_rate.value:.3f}Hz "
+                f"samples={len(data_signal)}"
+            )
 
-                # 将时间轴刻度转换为相对于信号中心的相对时间（可选，但更常见）
-                start_time = data_superimposed_filtered.times.value[0]
-                ax1.set_xlim(start_time, start_time + duration)  # 确保 X 轴范围正确
+            data_superimposed_filtered = _safe_bandpass(data_superimposed, BANDPASS_LOW, BANDPASS_HIGH)
+            data_signal_filtered = _safe_bandpass(data_signal, BANDPASS_LOW, BANDPASS_HIGH)
 
-                # 添加垂直线 (使用绝对时间戳)
-                ax1.axvline(mid_time, color='r', linestyle=':', linewidth=1.5, label='Approx. Injection Time')
+            fig, (ax_full, ax_zoom) = plt.subplots(2, 1, figsize=(12, 8), sharex=False)
+            ax_full_signal = ax_full.twinx()
+            ax_full.plot(
+                data_superimposed_filtered.times.value,
+                data_superimposed_filtered.value,
+                label="Superimposed (Signal + Noise)",
+                color="C0",
+                linewidth=0.5,
+            )
+            ax_full_signal.plot(
+                data_signal_filtered.times.value,
+                data_signal_filtered.value,
+                label="Injected Signal (Pure)",
+                color="C1",
+                linestyle="--",
+                linewidth=1.5,
+            )
 
-                # 显示图例 (Legend)
-                ax1.legend()
-                plt.tight_layout()
+            duration = data_superimposed.duration.value
+            start_time = data_superimposed_filtered.times.value[0]
+            mid_time = data_superimposed.times.min().value + duration / 2.0
 
-                # 5. 保存图表到文件，不显示
-                plt.savefig(plot_path)
-                plt.close(fig)
+            ax_full.set_xlim(start_time, start_time + duration)
+            ax_full.axvline(mid_time, color="r", linestyle=":", linewidth=1.5, label="Approx. Injection Time")
+            ax_full.set_ylabel("Superimposed Strain (Filtered)", fontsize=12, color="C0")
+            ax_full_signal.set_ylabel("Pure Signal Strain (Filtered)", fontsize=12, color="C1")
+            ax_full.set_xlabel("Time (s)", fontsize=12)
+            ax_full.set_title(
+                f"Event {detector_name}-SUPERIMPOSED-pop{pop_num:05d}_sample{frame_num:05d}: "
+                f"Filtered Waveform Comparison ({BANDPASS_LOW}-{BANDPASS_HIGH} Hz)",
+                fontsize=16,
+            )
+            ax_full.tick_params(axis="y", colors="C0")
+            ax_full_signal.tick_params(axis="y", colors="C1")
+            full_handles, full_labels = ax_full.get_legend_handles_labels()
+            signal_handles, signal_labels = ax_full_signal.get_legend_handles_labels()
+            ax_full.legend(full_handles + signal_handles, full_labels + signal_labels, loc="upper right")
 
-                print(f"✅ 波形对比图已成功保存到：{plot_path}")
-                print(f"提示：纯信号 (虚线) 现在应该清晰地显示在叠加信号 (实线) 的上方。")
+            ax_zoom.plot(
+                data_signal_filtered.times.value,
+                data_signal_filtered.value,
+                label="Injected Signal (Pure)",
+                color="C1",
+                linestyle="--",
+                linewidth=1.5,
+            )
+            half_window = ZOOM_WINDOW_SECONDS / 2.0
+            zoom_start = max(start_time, mid_time - half_window)
+            zoom_end = min(start_time + duration, mid_time + half_window)
+            ax_zoom.set_xlim(zoom_start, zoom_end)
+            ax_zoom.axvline(mid_time, color="r", linestyle=":", linewidth=1.5, label="Approx. Injection Time")
+            ax_zoom.set_ylabel("Strain (Filtered)", fontsize=12)
+            ax_zoom.set_xlabel("Time (s)", fontsize=12)
+            ax_zoom.set_title(f"Pure Signal Zoom Around Injection ({ZOOM_WINDOW_SECONDS:.1f} s window)", fontsize=13)
+            ax_zoom.legend()
+            plt.tight_layout()
+            plt.savefig(plot_path)
+            plt.close(fig)
 
-            except FileNotFoundError:
-                print(f"错误：未找到文件，请检查路径：{superimposed_path} 或 {signal_path}。")
-            except Exception as e:
-                # 如果仍然报错，打印出更详细的错误信息
-                print(f"发生致命错误: {e}")
-                print("请检查您是否已安装所有依赖项 (gwpy, matplotlib, numpy) 并且文件路径正确。")
+            print(f"[saved] {plot_path}")
+
+
+def main() -> None:
+    for detector_name in DETECTORS:
+        show_superimposed(detector_name)
+    print("\n--- Done ---")
+
 
 if __name__ == "__main__":
-    if __name__ == "__main__":
-        detectors = ['H1', 'L1']
-        for detector_name in detectors:
-            showSuperimposed((detector_name))
-        print("\n--- 所有事件处理完毕 ---")
+    main()

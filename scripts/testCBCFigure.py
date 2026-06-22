@@ -5,10 +5,18 @@ import os
 # =====================
 # 文件路径
 # =====================
-pop_num=28
-frames_num=3
-h1_file = f"./training_set/H1/H1-pop{pop_num:05d}_sample{frames_num:05d}.gwf"
-l1_file = f"./training_set/L1/L1-pop{pop_num:05d}_sample{frames_num:05d}.gwf"
+pop_num=0
+frames_num=0
+#version="v21"
+#version="v999"   # 64Hz
+#version="v1000" # 2048Hz
+#version="v1001"  # 32Hz
+#version = "v23"
+version = "v61"
+h1_file = f"./training_set/{version}/training_set0/H1/H1-pop{pop_num:05d}_sample{frames_num:05d}.gwf"
+l1_file = f"./training_set/{version}/training_set0/L1/L1-pop{pop_num:05d}_sample{frames_num:05d}.gwf"
+#h1_file = f"./training_set_test/fixed_one_test_{version}/training_set0/H1/H1-pop{pop_num:05d}_sample{frames_num:05d}.gwf"
+#l1_file = f"./training_set_test/fixed_one_test_{version}/training_set0/L1/L1-pop{pop_num:05d}_sample{frames_num:05d}.gwf"
 
 # =====================
 # 通道名
@@ -49,7 +57,7 @@ plt.ylabel("Strain")
 plt.legend()
 plt.tight_layout()
 
-out_path = os.path.join(out_dir, f"H1_L1_SGWB_strain-pop{pop_num:05d}_sample{frames_num:02d}.png")
+out_path = os.path.join(out_dir, f"H1_L1_SGWB_strain-pop{pop_num:05d}_sample{frames_num:02d}_{version}.png")
 plt.savefig(out_path, dpi=300)
 plt.close()
 

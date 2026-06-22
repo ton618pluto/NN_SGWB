@@ -4,7 +4,7 @@ import numpy as np
 
 
 def main() -> None:
-    npz_path = Path(__file__).parent / "joint_hyperparams_train" / "v3" / "joint_hyperparams_train_v3.npz"
+    npz_path = Path(__file__).parent / "joint_hyperparams_train" / "v12" / "joint_hyperparams_train_v12.npz"
 
     with np.load(npz_path, allow_pickle=True) as data:
         print(f"File: {npz_path}")
