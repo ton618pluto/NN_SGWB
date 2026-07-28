@@ -24,16 +24,20 @@ logging.getLogger("bilby.gw").setLevel(logging.WARNING)
 SECONDS_PER_YEAR = 365.25 * 24 * 3600
 FRAME_DURATION_SECONDS = 2048
 SNR_THRESH = 12.0
-SAMPLING_FREQUENCY = 32
+#SAMPLING_FREQUENCY = 32 # this will be changed
+SAMPLING_FREQUENCY = 512 # this will be changed
 MINIMUM_FREQUENCY = 10
 REFERENCE_FREQUENCY = 25.0
 
-version = "fixed_one_test_v61"
+#version = "fixed_one_test_v61"
+version = "fixed_one_test_v100" # this will be changed
 output_path = f"./parameter_sampling_test/{version}"
 data_hyper = np.load(f"./joint_hyperparams_test/{version}/joint_hyperparams_test_{version}.npz")
 start = 0
 hyper_number = 1
-num_frames = 10
+#num_frames = 10
+num_frames = 3
+REFERENCE_TRAIN_FILE_INDEX = 3  # this will be changed, control randomness
 
 
 @contextmanager
@@ -178,7 +182,7 @@ def sample_one_segment(
     beta_q,
 ):
     z_grid_n = 2048
-    zmax = 20.0
+    zmax = 10.0
     z_grid_np = np.linspace(0.0, zmax, z_grid_n, dtype=np.float32)
     dVdz_grid_np = Planck18.differential_comoving_volume(z_grid_np).value / 1e9
     z_grid = jnp.asarray(z_grid_np)
@@ -211,7 +215,8 @@ def sample_one_segment(
 
     redshift_dist = ratedistribution.MadauDickinson_RateDistribution(
         hyperparameters={"alpha_z": alpha_z, "beta_z": beta_z, "zp": zp},
-        priorlims_parameters={"z": (0.0, 20.0)},
+        priorlims_parameters={"z": (0.0, 10.0)},
+#        priorlims_parameters={"z": (0.0, 20.0)},
     )
 
     full_pop = POPmodels.MassSpinRedshiftIndependent_PopulationModel(
@@ -399,7 +404,7 @@ if __name__ == "__main__":
             mu_m=r_mu_m,
             sigma_m=r_sigma_m,
             beta_q=r_beta_q,
-            seed=i,
+            seed=REFERENCE_TRAIN_FILE_INDEX,
         )
         print(
             f"sample_id={i} done, saved: {result['filename']}, "

@@ -34,7 +34,8 @@ REFERENCE_FREQUENCY = 25.0
 #version = "v80"
 #version = "v81"
 #version = "v90"
-version = "v70"
+#version = "v70"
+version = "v71"
 output_path = f"./parameter_sampling_train/{version}"
 data_hyper = np.load(f"./joint_hyperparams_train/{version}/joint_hyperparams_train_{version}.npz")
 #hyper_number = 50000
@@ -188,7 +189,8 @@ def sample_one_segment(
     beta_q,
 ):
     z_grid_n = 2048
-    zmax = 20.0
+#    zmax = 20.0
+    zmax = 10.0
     z_grid_np = np.linspace(0.0, zmax, z_grid_n, dtype=np.float32)
     dVdz_grid_np = Planck18.differential_comoving_volume(z_grid_np).value / 1e9
     z_grid = jnp.asarray(z_grid_np)

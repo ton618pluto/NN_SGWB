@@ -10,7 +10,8 @@ from tqdm import tqdm
 
 PARAMETER_SPECS = {
     "zp": {"index": 0, "range": (0.85, 2.85)},
-    "alpha_z": {"index": 1, "range": (1.0, 5.0)},
+#    "alpha_z": {"index": 1, "range": (1.0, 5.0)},
+    "alpha_z": {"index": 1, "range": (1.0, 3.0)},
     "beta_z": {"index": 2, "range": (1.0, 5.0)},
     "alpha_m": {"index": 3, "range": (-3.0, 7.0)},
     "m_max": {"index": 4, "range": (100.0, 100.0)},
@@ -27,16 +28,23 @@ PARAMETER_SPECS = {
 # Only edit this list when you want to change the training labels.
 #SELECTED_PARAMETERS = ["alpha_m","delta_m","mu_m","sigma_m"]
 #SELECTED_PARAMETERS = ["mu_m","sigma_m"]
+SELECTED_PARAMETERS = ["zp","alpha_m"]
 #SELECTED_PARAMETERS = ["zp", "delta_m","beta_q"]
-SELECTED_PARAMETERS = ["zp", "alpha_m","delta_m","beta_q"]
+#SELECTED_PARAMETERS = ["zp", "alpha_m","delta_m","beta_q"]
 #SELECTED_PARAMETERS = ["zp", "alpha_m","delta_m","sigma_m","beta_q"]
 #SELECTED_PARAMETERS = ["zp", "alpha_m","delta_m","mu_m","beta_q"]
+#SELECTED_PARAMETERS = ["zp", "alpha_m","delta_m","mu_m","sigma_m","beta_q"]
+#SELECTED_PARAMETERS = ["zp", "alpha_z","beta_z","alpha_m","delta_m","mu_m","sigma_m","beta_q"]
 #SELECTED_PARAMETERS = ["zp","alpha_z","beta_z", "alpha_m","delta_m","beta_q"]
 #SELECTED_PARAMETERS = ["zp", "alpha_m","delta_m","lambda_peak","mu_m","sigma_m","beta_q"]
 
 PARAMETER_NAMES = list(SELECTED_PARAMETERS)
 LABEL_INDICES = [PARAMETER_SPECS[name]["index"] for name in SELECTED_PARAMETERS]
 PARAMETER_RANGES = {name: PARAMETER_SPECS[name]["range"] for name in SELECTED_PARAMETERS}
+USE_INPUT_SCALE = True
+#USE_PER_SAMPLE_DEMEAN = True
+USE_PER_SAMPLE_DEMEAN = False
+INPUT_SCALE = 1e23
 
 
 def _sample_key(file_name: str) -> str:
@@ -78,7 +86,6 @@ class GWDatasetV1A(Dataset):
         self.h1_dir = Path(h1_dir) if h1_dir is not None else None
         self.l1_dir = Path(l1_dir) if l1_dir is not None else None
         self.dataset_name = dataset_name
-        self.input_scale = 1e23
         self.sample_step = max(1, int(sample_step))
 
         if records is not None:
@@ -160,8 +167,12 @@ class GWDatasetV1A(Dataset):
 
     def _load_channel(self, path: Path) -> np.ndarray:
         sample = np.load(path, allow_pickle=True).item()
-        data = np.asarray(sample["data"], dtype=np.float32) * self.input_scale
-        return data - data.mean(dtype=np.float32)
+        data = np.asarray(sample["data"], dtype=np.float32)
+        if USE_INPUT_SCALE:
+            data = data * INPUT_SCALE
+        if USE_PER_SAMPLE_DEMEAN:
+            data = data - data.mean(dtype=np.float32)
+        return data
 
     def _calculate_label_stats(self) -> tuple[np.ndarray, np.ndarray]:
         labels = []
@@ -197,8 +208,11 @@ class GWDatasetV1A(Dataset):
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         record = self.records[index]
         h1_sample = np.load(record["h1"], allow_pickle=True).item()
-        h1 = np.asarray(h1_sample["data"], dtype=np.float32) * self.input_scale
-        h1 = h1 - h1.mean(dtype=np.float32)
+        h1 = np.asarray(h1_sample["data"], dtype=np.float32)
+        if USE_INPUT_SCALE:
+            h1 = h1 * INPUT_SCALE
+        if USE_PER_SAMPLE_DEMEAN:
+            h1 = h1 - h1.mean(dtype=np.float32)
         l1 = self._load_channel(record["l1"])
         features = np.stack([h1, l1], axis=0)
         features = (features - self.feature_mean[:, None].numpy()) / self.feature_std[:, None].numpy()

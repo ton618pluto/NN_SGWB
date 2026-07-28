@@ -5,8 +5,9 @@ import numpy as np
 import pandas as pd
 from gwpy.timeseries import TimeSeries
 
-#NUM_SPLITS = 1
-NUM_SPLITS = 8
+NUM_SPLITS = 1
+#NUM_SPLITS = 8
+version = "v61"    # this will be changed
 
 def get_label(file_path):
     df = pd.read_csv(file_path)
@@ -69,9 +70,9 @@ def get_superimposed_data(d_name, base_path, save_path, labels_dict, num_splits=
 
 
 if __name__ == "__main__":
-    detectors = ["H1", "L1"]
+#    detectors = ["H1", "L1"]
+    detectors = ["H1"]
     num_splits = NUM_SPLITS
-    version = "v6"    # 如果要改就改这里
 
     scripts_dir = Path(__file__).resolve().parent
     input_root = scripts_dir / "training_set_superimposed" / version

@@ -5,14 +5,15 @@ import numpy as np
 
 duration = 2048
 #jobNumber = 24
-jobNumber = 11
-file_number = 20
+jobNumber = 5
+start_file_number = 90900
+file_number = 10
 minimum_frequency = 10
 #version = "v6"
 #version = "v20"
 #version = "v21"
 #version = "v42"
-version = "v62"
+version = "v100"
 param_dir = Path(f"./parameter_sampling_train/{version}")
 #version = "v61"
 #param_dir = Path(f"./parameter_sampling_test/fixed_one_test_{version}")
@@ -39,12 +40,19 @@ def count_events_for_job(npz_path: Path, job_index: int) -> int:
 
 
 def main() -> None:
-    npz_files = sorted(param_dir.glob("CBC_params_example*.npz"))[:file_number]
+    npz_files = []
+    for file_idx in range(start_file_number, start_file_number + file_number):
+        npz_path = param_dir / f"CBC_params_example{file_idx:05d}.npz"
+        if npz_path.exists():
+            npz_files.append(npz_path)
     if not npz_files:
         raise FileNotFoundError(f"No CBC parameter files found in: {param_dir.resolve()}")
 
     print(f"Parameter directory: {param_dir.resolve()}")
-    print(f"Checking first {len(npz_files)} files, jobs 1 to {jobNumber}")
+    print(
+        f"Checking {len(npz_files)} files starting from file number {start_file_number}, "
+        f"jobs 1 to {jobNumber}"
+    )
 
     for npz_path in npz_files:
         print(f"\n{npz_path.name}")

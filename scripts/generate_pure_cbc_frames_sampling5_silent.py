@@ -29,21 +29,22 @@ SNR_THRESH = 12.0
 #start = 7000
 start = 0
 temp_idx = 0
-sampling_frequency = 32  # 采样率
-#version = 'v10_2'    # 数据集版本
-#version = 'v6'    # 数据集版本
-#version = 'v11'    # 数据集版本
-#version = 'v12'    # 数据集版本
-#version = 'v21'    # 数据集版本
-#version = 'v23'    # 数据集版本
-#version = 'v43'    # 数据集版本
-version = 'v60'    # 数据集版本
+
+# ************************
+# ************************
+#sampling_frequency = 32  # 采样率,32或512，this will be changed
+sampling_frequency = 512  # 采样率,32或512
+# ************************
+# ************************
+
+
+
+version = 'v100'    # 数据集版本，this will be changed
+#version = 'v100_test_2'    # 数据集版本，this will be changed
 #num_populations = 100000
 #num_populations = 50000   # 超参数组数
-#num_populations = 5000   # 超参数组数
-#num_populations = 100  # 超参数组数
-num_populations = 200000   # 超参数组数
-#num_populations = 1200   # 超参数组数
+num_populations = 300000   # 超参数组数，this will be changed
+
 #all_jobs=5     # frame数量，每段frame长2048s
 #all_jobs=2     # frame数量，每段frame长2048s，这个值填比frame数+1
 #all_jobs=24
@@ -69,9 +70,10 @@ def process_population(pop_idx, input_dir, output_base_dir, config):
 
     param_file = os.path.join(input_dir, f'CBC_params_example{pop_idx:05d}.npz')
     if not os.path.exists(param_file):
-        return []
+        return {"rows": [], "errored_event_entries": [], "pop_labels": None, "pop_idx": pop_idx}
 
     results = []
+    errored_event_entries = []
     list_cbc = np.load(param_file)
 
     # 提取标签
@@ -212,6 +214,28 @@ def process_population(pop_idx, input_dir, output_base_dir, config):
 
             except Exception as e:
                 errored+=1
+                errored_event_entries.append(
+                    "pop_idx={pop_idx:05d}, sample_id={sample_id}, job={job}, event={event}, "
+                    "tc={tc:.10f}, m1={m1:.10f}, m2={m2:.10f}, dL={dL:.10f}, z={z:.10f}, "
+                    "ra={ra:.10f}, dec={dec:.10f}, psi={psi:.10f}, phi_c={phi_c:.10f}, "
+                    "iota={iota:.10f}, error={error}".format(
+                        pop_idx=pop_idx,
+                        sample_id=sample_id_str,
+                        job=jobNumber,
+                        event=EVENT,
+                        tc=float(tc),
+                        m1=float(m1),
+                        m2=float(m2),
+                        dL=float(dL),
+                        z=float(z),
+                        ra=float(ra),
+                        dec=float(dec),
+                        psi=float(psi),
+                        phi_c=float(phi_c),
+                        iota=float(iota),
+                        error=str(e),
+                    )
+                )
                 continue
 
                 
@@ -227,12 +251,18 @@ def process_population(pop_idx, input_dir, output_base_dir, config):
 
         results.append({'sample_id': sample_id_str, 'st': st, **pop_labels})
 
-    return results
+    return {
+        "rows": results,
+        "errored_event_entries": errored_event_entries,
+        "pop_labels": pop_labels,
+        "pop_idx": pop_idx,
+    }
 
 
 def generate_samples(max_workers=8):
 
     csv_path = os.path.join(output_base_dir, 'train_idx.csv')
+    errored_log_path = os.path.join(output_base_dir, 'errored_events_log.txt')
 
     config = {
         'samples_per_pop': 5,
@@ -257,7 +287,23 @@ def generate_samples(max_workers=8):
         for future in as_completed(futures):
             pop_idx = futures[future]
             try:
-                pop_results = future.result()
+                worker_result = future.result()
+                pop_results = worker_result["rows"]
+                errored_event_entries = worker_result["errored_event_entries"]
+                pop_labels = worker_result["pop_labels"]
+                worker_pop_idx = worker_result["pop_idx"]
+                if errored_event_entries:
+                    with open(errored_log_path, "a", encoding="utf-8") as handle:
+                        handle.write(f"pop_idx={worker_pop_idx:05d}\n")
+                        if pop_labels is not None:
+                            handle.write(
+                                "hyperparameters: "
+                                + ", ".join(f"{key}={value:.10f}" for key, value in pop_labels.items())
+                                + "\n"
+                            )
+                        for entry in errored_event_entries:
+                            handle.write(entry + "\n")
+                        handle.write("\n")
                 if pop_results:
                     df_tmp = pd.DataFrame(pop_results)
                     # 主进程负责写入文件，确保线程/进程安全
@@ -272,4 +318,4 @@ def generate_samples(max_workers=8):
 
 if __name__ == '__main__':
     # 建议 max_workers 设为 CPU 核心数的一半或 2/3，避免内存溢出
-    generate_samples(max_workers=1)
+    generate_samples(max_workers=8)

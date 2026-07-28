@@ -21,13 +21,17 @@ except ImportError:
     cobaya_run = None
 
 
-START_SAMPLE_INDEX = 0
-NUM_TEST_SAMPLES = 5
+START_SAMPLE_INDEX = 0   # start of someone example,is same as "TEST_SAMPLE_INDEX" in the "show_test_sample_hyperparameters.py" 
+NUM_TEST_SAMPLES = 1 # number of test example
 #DATA_VERSION = "v21"
+DATA_VERSION = "v61"
 #DATA_VERSION = "v23"
 #DATA_VERSION = "v41"
 #DATA_VERSION = "v42"
-DATA_VERSION = "v22"
+#DATA_VERSION = "v80"
+#DATA_VERSION = "v70"
+#DATA_VERSION = "v71"
+#DATA_VERSION = "v100"
 GPU_INDEX = 1
 SEED = 42
 #MAX_SAMPLES = 30000
@@ -215,6 +219,9 @@ def main() -> None:
 
     end_sample_index = min(len(dataset), START_SAMPLE_INDEX + NUM_TEST_SAMPLES)
     for sample_index in range(START_SAMPLE_INDEX, end_sample_index):
+        record = dataset.records[sample_index]
+        print(f"Test sample H1 path: {record['h1']}")
+        print(f"Test sample L1 path: {record['l1']}")
         data, label_norm = dataset[sample_index]
         data = data.unsqueeze(0).to(device)
         label_norm = label_norm.unsqueeze(0).to(device)
@@ -237,6 +244,11 @@ def main() -> None:
                 "ref": float(label_true_norm[i]),
                 "proposal": PROPOSAL_STD,
             }
+
+        print(f"Parameter names: {parameter_names}")
+        print(f"Label true: {label_true}")
+        print(f"Label true norm: {label_true_norm}")
+        print(f"Params info: {params_info}")
 
         chain_prefix = str(figure_dir / f"cobaya_chain_{DATA_VERSION}_{model_tag}_sample{sample_index:05d}")
         info = {

@@ -25,11 +25,19 @@ except ImportError:
 
 
 BASE_VERSION = "v61"
+#BASE_VERSION = "v64"
+#BASE_VERSION = "v80"
+#BASE_VERSION = "v81"
+#BASE_VERSION = "v70"
+#BASE_VERSION = "v71"
 TRAIN_DATA_VERSION = BASE_VERSION
+#input_folder="processed_data_test" # this will be changed,processed_data_test is "signal",processed_data_test_superimposed is "signal+noise"
+input_folder="processed_data_test_superimposed" # this will be changed,processed_data_test is "signal",processed_data_test_superimposed is "signal+noise"
 TEST_DATA_VERSION = f"fixed_one_test_{BASE_VERSION}"
 USE_MODEL2 = False
 TEST_SAMPLE_INDEX = 0
-NUM_FRAMES = 10
+#NUM_FRAMES = 10   # can be changed
+NUM_FRAMES = 3   # can be changed
 #NUM_FRAMES = 1
 GPU_INDEX = 1
 SEED = 42
@@ -43,6 +51,9 @@ RMINUS1_STOP = 0.03
 RMINUS1_CL_STOP = 0.2
 SAVE_TEXT_SUMMARY = False
 SAVE_COBAYA_CHAIN = False
+USE_INPUT_SCALE = True
+INPUT_SCALE = 1e23
+USE_PER_SAMPLE_DEMEAN = True
 
 
 DATA_VERSION_RANGE_OVERRIDES = {
@@ -253,7 +264,7 @@ def _load_multi_frame_data(
     label_mean: np.ndarray,
     label_std: np.ndarray,
 ) -> tuple[torch.Tensor, np.ndarray, dict[str, float], list[Path], list[Path]]:
-    base_dir = Path(__file__).resolve().parents[1] / "processed_data_test" / processed_test_version
+    base_dir = Path(__file__).resolve().parents[1] / input_folder / processed_test_version
     h1_dir = base_dir / "H1_splits"
     l1_dir = base_dir / "L1_splits"
     if not h1_dir.exists():
@@ -261,7 +272,8 @@ def _load_multi_frame_data(
     if not l1_dir.exists():
         raise FileNotFoundError(f"L1 split directory not found: {l1_dir}")
 
-    prefix = f"H1-pop{test_sample_index:05d}_"
+#    prefix = f"H1-pop{test_sample_index:05d}_"
+    prefix = f"H1-SUPERIMPOSED-pop{test_sample_index:05d}_"
     h1_files = sorted(path for path in h1_dir.glob(f"{prefix}*.npy"))
     if len(h1_files) < num_frames:
         raise ValueError(
@@ -279,10 +291,14 @@ def _load_multi_frame_data(
     for h1_path, l1_path in zip(h1_files, l1_files):
         h1_sample = np.load(h1_path, allow_pickle=True).item()
         l1_sample = np.load(l1_path, allow_pickle=True).item()
-        h1 = np.asarray(h1_sample["data"], dtype=np.float32) * 1e23
-        h1 = h1 - h1.mean(dtype=np.float32)
-        l1 = np.asarray(l1_sample["data"], dtype=np.float32) * 1e23
-        l1 = l1 - l1.mean(dtype=np.float32)
+        h1 = np.asarray(h1_sample["data"], dtype=np.float32)
+        l1 = np.asarray(l1_sample["data"], dtype=np.float32)
+        if USE_INPUT_SCALE:
+            h1 = h1 * INPUT_SCALE
+            l1 = l1 * INPUT_SCALE
+        if USE_PER_SAMPLE_DEMEAN:
+            h1 = h1 - h1.mean(dtype=np.float32)
+            l1 = l1 - l1.mean(dtype=np.float32)
         features = np.stack([h1, l1], axis=0)
         features = (features - feature_mean[:, None]) / feature_std[:, None]
         features_list.append(features.astype(np.float32))

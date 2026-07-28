@@ -5,6 +5,9 @@ import os
 # =====================
 # 文件路径
 # =====================
+#pop_num=13
+#pop_num=3
+#pop_num=4
 pop_num=0
 frames_num=0
 #version="v21"
@@ -12,7 +15,17 @@ frames_num=0
 #version="v1000" # 2048Hz
 #version="v1001"  # 32Hz
 #version = "v23"
-version = "v61"
+#version = "v61"
+#version = "v70"
+#version = "v100_err"
+#version = "v100_double_z"
+#version = "v100"
+#version = "v71"
+#version = "v100_test_2"
+#version = "v80"
+#version = "v81"
+#version = "v90"
+version = "v100"
 h1_file = f"./training_set/{version}/training_set0/H1/H1-pop{pop_num:05d}_sample{frames_num:05d}.gwf"
 l1_file = f"./training_set/{version}/training_set0/L1/L1-pop{pop_num:05d}_sample{frames_num:05d}.gwf"
 #h1_file = f"./training_set_test/fixed_one_test_{version}/training_set0/H1/H1-pop{pop_num:05d}_sample{frames_num:05d}.gwf"

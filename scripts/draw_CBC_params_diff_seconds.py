@@ -80,7 +80,8 @@ def run_parameter_sampling_seconds(
         os.makedirs(output_dir)
 
     z_grid_n = 2048
-    zmax = 20.0
+#    zmax = 20.0
+    zmax = 10.0
     z_grid_np = np.linspace(0.0, zmax, z_grid_n, dtype=np.float32)
     dVdz_grid_np = Planck18.differential_comoving_volume(z_grid_np).value / 1e9
     z_grid = jnp.asarray(z_grid_np)
@@ -117,7 +118,8 @@ def run_parameter_sampling_seconds(
 
     redshift_dist = ratedistribution.MadauDickinson_RateDistribution(
         hyperparameters={"alpha_z": alpha_z, "beta_z": beta_z, "zp": zp},
-        priorlims_parameters={"z": (0.0, 20.0)},
+#        priorlims_parameters={"z": (0.0, 20.0)},
+        priorlims_parameters={"z": (0.0, 10.0)},
     )
 
     full_pop = POPmodels.MassSpinRedshiftIndependent_PopulationModel(

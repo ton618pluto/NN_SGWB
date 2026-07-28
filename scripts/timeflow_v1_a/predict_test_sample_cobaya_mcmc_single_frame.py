@@ -24,20 +24,40 @@ except ImportError:
 
 
 BASE_VERSION = "v61"
+#BASE_VERSION = "v64"
+#BASE_VERSION = "v80"
+#BASE_VERSION = "v81"
+#BASE_VERSION = "v70"
+#BASE_VERSION = "v71"
+
+#input_folder="processed_data_test" # this will be changed,processed_data_test is "signal",processed_data_test_superimposed is "signal+noise"
+input_folder="processed_data_test_superimposed" # this will be changed,processed_data_test is "signal",processed_data_test_superimposed is "signal+noise"
+# input_folder="processed_data_superimposed"
+
 TRAIN_DATA_VERSION = BASE_VERSION
-TEST_DATA_VERSION = f"fixed_one_test_{BASE_VERSION}"
+#TEST_DATA_VERSION = f"fixed_one_test_{BASE_VERSION}"
+TEST_DATA_VERSION = f"{BASE_VERSION}"
+
 USE_MODEL2 = False
-TEST_SAMPLE_INDEX = 0 
-FRAME_INDEX = 3  # test frame of id
+TEST_SAMPLE_INDEX = 0   # pop num , is no changed
+FRAME_INDEX = 0  # test frame of id,start of 0,can be changed
+#FRAME_INDEX = 1  # test frame of id,start of 0
+#FRAME_INDEX = 9  # test frame of id,start of 0
+#FRAME_INDEX = 2  # test frame of id,start of 0
 GPU_INDEX = 1
 SEED = 42
-MAX_SAMPLES = 8000
+MAX_SAMPLES = 20000
 NORMALIZED_PRIOR_ABS_MAX = 8.0
 PROPOSAL_STD = 0.15
 RMINUS1_STOP = 0.03
 RMINUS1_CL_STOP = 0.2
 SAVE_TEXT_SUMMARY = False
 SAVE_COBAYA_CHAIN = False
+USE_INPUT_SCALE = False
+#USE_INPUT_SCALE = True
+INPUT_SCALE = 1e23
+#USE_PER_SAMPLE_DEMEAN = True
+USE_PER_SAMPLE_DEMEAN = False
 
 
 DATA_VERSION_RANGE_OVERRIDES = {
@@ -248,7 +268,7 @@ def _load_single_frame_data(
     label_mean_array: np.ndarray,
     label_std_array: np.ndarray,
 ) -> tuple[torch.Tensor, np.ndarray, dict[str, float], Path, Path]:
-    base_dir = Path(__file__).resolve().parents[1] / "processed_data_test" / processed_test_version
+    base_dir = Path(__file__).resolve().parents[1] / input_folder / processed_test_version
     h1_dir = base_dir / "H1_splits"
     l1_dir = base_dir / "L1_splits"
     if not h1_dir.exists():
@@ -256,7 +276,8 @@ def _load_single_frame_data(
     if not l1_dir.exists():
         raise FileNotFoundError(f"L1 split directory not found: {l1_dir}")
 
-    prefix = f"H1-pop{test_sample_index:05d}_"
+#    prefix = f"H1-pop{test_sample_index:05d}_"
+    prefix = f"H1-SUPERIMPOSED-pop{test_sample_index:05d}_"
     h1_files = sorted(path for path in h1_dir.glob(f"{prefix}*.npy"))
     if not h1_files:
         raise FileNotFoundError(f"No H1 files found for pop{test_sample_index:05d} in {h1_dir}")
@@ -272,10 +293,14 @@ def _load_single_frame_data(
 
     h1_sample = np.load(h1_path, allow_pickle=True).item()
     l1_sample = np.load(l1_path, allow_pickle=True).item()
-    h1 = np.asarray(h1_sample["data"], dtype=np.float32) * 1e23
-    h1 = h1 - h1.mean(dtype=np.float32)
-    l1 = np.asarray(l1_sample["data"], dtype=np.float32) * 1e23
-    l1 = l1 - l1.mean(dtype=np.float32)
+    h1 = np.asarray(h1_sample["data"], dtype=np.float32)
+    l1 = np.asarray(l1_sample["data"], dtype=np.float32)
+    if USE_INPUT_SCALE:
+        h1 = h1 * INPUT_SCALE
+        l1 = l1 * INPUT_SCALE
+    if USE_PER_SAMPLE_DEMEAN:
+        h1 = h1 - h1.mean(dtype=np.float32)
+        l1 = l1 - l1.mean(dtype=np.float32)
     features = np.stack([h1, l1], axis=0)
     features = (features - feature_mean[:, None]) / feature_std[:, None]
 
@@ -314,6 +339,8 @@ def main() -> None:
         label_mean_array=label_mean_array,
         label_std_array=label_std_array,
     )
+    print(f"Test sample H1 path: {h1_path}")
+    print(f"Test sample L1 path: {l1_path}")
     data = data.to(device)
     label_true = label_true_norm * label_std_array + label_mean_array
 
@@ -334,6 +361,11 @@ def main() -> None:
             "ref": float(label_true_norm[i]),
             "proposal": PROPOSAL_STD,
         }
+
+    print(f"Parameter names: {parameter_names}")
+    print(f"Label true: {label_true}")
+    print(f"Label true norm: {label_true_norm}")
+    print(f"Params info: {params_info}")
 
     chain_prefix = str(
         figure_dir

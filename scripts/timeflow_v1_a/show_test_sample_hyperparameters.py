@@ -5,10 +5,18 @@ from pathlib import Path
 
 import numpy as np
 
-DATA_VERSION = "v22"
+#DATA_VERSION = "v22"
 #DATA_VERSION = "v64"
+#DATA_VERSION = "v80"
+#DATA_VERSION = "v81"
+#DATA_VERSION = "v70"
+#DATA_VERSION = "v71"
+#DATA_VERSION = "v61"
+#DATA_VERSION = "v61_random_two_noise"
+DATA_VERSION = "v61_random_two_noise_1000"
+#DATA_VERSION = "v100"
 USE_MODEL2 = False
-TEST_SAMPLE_INDEX = 0
+TEST_SAMPLE_INDEX = 2  # this will be changed
 
 FULL_PARAMETER_NAMES = (
     "zp",

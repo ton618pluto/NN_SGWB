@@ -10,25 +10,45 @@ import gwpy.timeseries as ts
 import numpy as np
 
 
-BASE_SEED = 123456
+#BASE_SEED = 123456
+BASE_SEED = 42
 #version = 'v999'   # 2048Hz
 #version = 'v9999'   # 64Hz
-version = 'v99999'   # 32Hz
+#version = 'v99999'   # 32Hz
+#version = 'v61'
+#version = 'v0512'
 # version = 'v999'   # 数据集版本号
+version = 'v100'
 start_job = 1
 #end_job = 4
 #end_job = 23
 #end_job = 43   # frame数量
-end_job = 1
-sampling_frequency = 32.0  # 采样率
-# sampling_frequency = 2048.0  # 采样率
+#end_job = 100000
+#end_job = 1
+end_job = 300000
+#NOISE_SCALE_FACTOR = 1 / 1000
+NOISE_SCALE_FACTOR = 1
+#end_job = 100000
+#sampling_frequency = 32.0  # 采样率
+sampling_frequency = 512.0  # 采样率
 
 
 def generate_noiseframes_for_job(job_number: int, base_seed: int = BASE_SEED) -> None:
     duration = 2048
-    start_time = (job_number - 1) * duration
+#    start_time = (job_number - 1) * duration
+    start_time = 0
     minimum_frequency = 5.0
 #    sampling_frequency = 2048.0
+    h1_output_dir = f"./noise_waveform/{version}/noise_waveform_H1"
+    l1_output_dir = f"./noise_waveform/{version}/noise_waveform_L1"
+    os.makedirs(h1_output_dir, exist_ok=True)
+    os.makedirs(l1_output_dir, exist_ok=True)
+
+    h1_path = os.path.join(h1_output_dir, f"H1-STRAIN-{job_number:05d}-duration.gwf")
+    l1_path = os.path.join(l1_output_dir, f"L1-STRAIN-{job_number:05d}-duration.gwf")
+    if os.path.exists(h1_path) and os.path.exists(l1_path):
+        print(f"job {job_number:05d} skipped, existing files found.")
+        return
     
 
     # 固定到 job 级别：同一个 job_number 多次运行结果一致，不同 job_number 仍然不同。
@@ -53,9 +73,10 @@ def generate_noiseframes_for_job(job_number: int, base_seed: int = BASE_SEED) ->
     base_channel_name = "TEST_INJ"
     for ifo in interferometers:
         channel_name = f"{ifo.name}:{base_channel_name}"
+        scaled_strain = ifo.time_domain_strain * NOISE_SCALE_FACTOR
         inj_channel = gwpy.detector.Channel(channel_name)
         injected_ts = ts.TimeSeries(
-            ifo.time_domain_strain,
+            scaled_strain,
             times=ifo.time_array,
             name=channel_name,
             channel=inj_channel,

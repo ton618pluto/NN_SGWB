@@ -26,9 +26,20 @@ from model2 import GWFlowModelV1A_Model2
 #DATA_VERSION = "v44"
 #DATA_VERSION = "v60"
 #DATA_VERSION = "v61"
+#DATA_VERSION = "v61_1000"
+#DATA_VERSION = "v61_500"
+#DATA_VERSION = "v61_200"
+#DATA_VERSION = "v61_1"
 #DATA_VERSION = "v62"
-DATA_VERSION = "v63"
+#DATA_VERSION = "v64"
+#DATA_VERSION = "v80"
+#DATA_VERSION = "v81"
+#DATA_VERSION = "v70"
+#DATA_VERSION = "v71"
 #DATA_VERSION = "v50"
+#DATA_VERSION = "v100"
+DATA_VERSION = "v100"
+#DATA_VERSION = "v100_test"
 #USE_MODEL2 = True
 USE_MODEL2 = False
 #folder = "processed_data_superimposed"
@@ -38,11 +49,15 @@ USE_QUIET_LOGGING = False
 TRAIN_SAMPLE_STEP = 1
 VAL_FRACTION = 0.1
 TEST_FRACTION = 0.1
-#BATCH_SIZE = 32
-#BATCH_SIZE = 128
-BATCH_SIZE = 64
+#BATCH_SIZE = 32   # this will be changed
+#BATCH_SIZE = 128   # this will be changed
+#BATCH_SIZE = 64   # this will be changed
+BATCH_SIZE = 16   # this will be changed
+#BATCH_SIZE = 8   # this will be changed
 #EPOCHS = 100
-EPOCHS = 20
+#EPOCHS = 20
+#EPOCHS = 10
+EPOCHS = 15
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-4
 #WEIGHT_DECAY = 1e-6
@@ -57,9 +72,10 @@ FLOW_BINS = 8
 FLOW_TAIL_BOUND = 3.0
 SEED = 42
 AUTO_RESUME = True
-GPU_INDEX = 0
-PREVIEW_NUM_SAMPLES = 500
+GPU_INDEX = 0   # control GPU number
+PREVIEW_NUM_SAMPLES = 50
 PREVIEW_NUM_FEATURES = 500
+SAVE_EPOCH_CHECKPOINTS_AFTER = 5
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 VERSION_DIR = Path(__file__).resolve().parent
 
@@ -84,6 +100,34 @@ def ensure_history_header(path: Path) -> None:
 def append_history(path: Path, epoch: int, train_nll: float, val_nll: float) -> None:
     with path.open("a", encoding="utf-8") as handle:
         handle.write(f"{epoch},{train_nll:.8f},{val_nll:.8f}\n")
+
+
+def load_stats_cache(path: Path):
+    if not path.exists():
+        return None
+    with np.load(path, allow_pickle=False) as cache:
+        return {
+            "label_mean": torch.tensor(cache["label_mean"], dtype=torch.float32),
+            "label_std": torch.tensor(cache["label_std"], dtype=torch.float32),
+            "feature_mean": torch.tensor(cache["feature_mean"], dtype=torch.float32),
+            "feature_std": torch.tensor(cache["feature_std"], dtype=torch.float32),
+        }
+
+
+def save_stats_cache(
+    path: Path,
+    label_mean: torch.Tensor,
+    label_std: torch.Tensor,
+    feature_mean: torch.Tensor,
+    feature_std: torch.Tensor,
+) -> None:
+    np.savez(
+        path,
+        label_mean=label_mean.cpu().numpy(),
+        label_std=label_std.cpu().numpy(),
+        feature_mean=feature_mean.cpu().numpy(),
+        feature_std=feature_std.cpu().numpy(),
+    )
 
 
 def evaluate_epoch(model, loader, device):
@@ -179,7 +223,29 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    train_dataset = GWDatasetV1A(records=train_records, dataset_name="train")
+    stats_cache_path = output_dir / "normalization_stats_v1_a.npz"
+    cached_stats = load_stats_cache(stats_cache_path)
+    if cached_stats is not None:
+        print(f"Loaded normalization cache: {stats_cache_path}")
+        train_dataset = GWDatasetV1A(
+            records=train_records,
+            dataset_name="train",
+            label_mean=cached_stats["label_mean"],
+            label_std=cached_stats["label_std"],
+            feature_mean=cached_stats["feature_mean"],
+            feature_std=cached_stats["feature_std"],
+        )
+    else:
+        train_dataset = GWDatasetV1A(records=train_records, dataset_name="train")
+        save_stats_cache(
+            stats_cache_path,
+            train_dataset.label_mean,
+            train_dataset.label_std,
+            train_dataset.feature_mean,
+            train_dataset.feature_std,
+        )
+        print(f"Saved normalization cache: {stats_cache_path}")
+
     val_dataset = GWDatasetV1A(
         records=val_records,
         dataset_name="val",
@@ -212,6 +278,8 @@ def main() -> None:
     best_path = output_dir / f"best_flow_v1_a{model_suffix}.pt"
     latest_path = output_dir / f"latest_flow_v1_a{model_suffix}.pt"
     history_path = output_dir / f"epoch_nll_history_v1_a{model_suffix}.txt"
+    epoch_ckpt_dir = output_dir / f"epoch_checkpoints_v1_a{model_suffix}"
+    epoch_ckpt_dir.mkdir(parents=True, exist_ok=True)
     ensure_history_header(history_path)
 
     start_epoch, best_val_nll = try_resume_training(model, optimizer, scheduler, scaler, latest_path, device)
@@ -282,6 +350,9 @@ def main() -> None:
             "feature_std": train_dataset.feature_std,
         }
         torch.save(checkpoint, latest_path)
+        if epoch > SAVE_EPOCH_CHECKPOINTS_AFTER:
+            epoch_path = epoch_ckpt_dir / f"epoch_{epoch:03d}.pt"
+            torch.save(checkpoint, epoch_path)
         if val_nll < best_val_nll:
             best_val_nll = val_nll
             torch.save(checkpoint, best_path)
