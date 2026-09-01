@@ -23,28 +23,32 @@ except ImportError:
     cobaya_run = None
 
 
-BASE_VERSION = "v61"
+#BASE_VERSION = "v61"
+#BASE_VERSION = "v61_500"
+#BASE_VERSION = "v61_random_two_noise_500"
+BASE_VERSION = "v61_random_two_noise_100"
 #BASE_VERSION = "v64"
 #BASE_VERSION = "v80"
 #BASE_VERSION = "v81"
 #BASE_VERSION = "v70"
 #BASE_VERSION = "v71"
+#BASE_VERSION = "v100"
 
 #input_folder="processed_data_test" # this will be changed,processed_data_test is "signal",processed_data_test_superimposed is "signal+noise"
 input_folder="processed_data_test_superimposed" # this will be changed,processed_data_test is "signal",processed_data_test_superimposed is "signal+noise"
 # input_folder="processed_data_superimposed"
 
 TRAIN_DATA_VERSION = BASE_VERSION
-#TEST_DATA_VERSION = f"fixed_one_test_{BASE_VERSION}"
-TEST_DATA_VERSION = f"{BASE_VERSION}"
+TEST_DATA_VERSION = f"fixed_one_test_{BASE_VERSION}"
+#TEST_DATA_VERSION = f"{BASE_VERSION}"
 
 USE_MODEL2 = False
 TEST_SAMPLE_INDEX = 0   # pop num , is no changed
-FRAME_INDEX = 0  # test frame of id,start of 0,can be changed
-#FRAME_INDEX = 1  # test frame of id,start of 0
-#FRAME_INDEX = 9  # test frame of id,start of 0
-#FRAME_INDEX = 2  # test frame of id,start of 0
-GPU_INDEX = 1
+#FRAME_INDEX = 1  # test frame of id,start of 0,can be changed
+#FRAME_INDEX = 6  # test frame of id,start of 0
+#FRAME_INDEX = 5  # test frame of id,start of 0
+FRAME_INDEX = 3  # test frame of id,start of 0
+GPU_INDEX = 0
 SEED = 42
 MAX_SAMPLES = 20000
 NORMALIZED_PRIOR_ABS_MAX = 8.0
@@ -433,7 +437,7 @@ def main() -> None:
                     ax.plot(x_grid, y_grid, color="#4DAA57", linewidth=1.8)
                 else:
                     ax.hist(samples, bins=40, density=True, color="#4DAA57", alpha=0.35)
-                ax.axvline(label_true[col], color="#BDBDBD", linestyle="--", linewidth=1.0)
+                ax.axvline(label_true[col], color="red", linestyle="--", linewidth=1.0)
                 ax.set_title(parameter_names[col])
                 ax.set_xlim(*x_limits)
                 ax.set_yticks([])

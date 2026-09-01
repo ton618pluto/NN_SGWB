@@ -21,10 +21,12 @@ except ImportError:
     cobaya_run = None
 
 
-START_SAMPLE_INDEX = 0   # start of someone example,is same as "TEST_SAMPLE_INDEX" in the "show_test_sample_hyperparameters.py" 
+START_SAMPLE_INDEX = 0
+#START_SAMPLE_INDEX = 1   # start of someone example,is same as "TEST_SAMPLE_INDEX" in the "show_test_sample_hyperparameters.py" 
 NUM_TEST_SAMPLES = 1 # number of test example
 #DATA_VERSION = "v21"
-DATA_VERSION = "v61"
+#DATA_VERSION = "v61_random_two_noise_100"
+DATA_VERSION = "v100_random_two_noise_100"
 #DATA_VERSION = "v23"
 #DATA_VERSION = "v41"
 #DATA_VERSION = "v42"
@@ -307,7 +309,7 @@ def main() -> None:
                         ax.plot(x_grid, y_grid, color="#4DAA57", linewidth=1.8)
                     else:
                         ax.hist(samples, bins=40, density=True, color="#4DAA57", alpha=0.35)
-                    ax.axvline(label_true[col], color="#BDBDBD", linestyle="--", linewidth=1.0)
+                    ax.axvline(label_true[col], color="red", linestyle="--", linewidth=1.0)
                     ax.set_title(parameter_names[col])
                     ax.set_xlim(*x_limits)
                     ax.set_yticks([])

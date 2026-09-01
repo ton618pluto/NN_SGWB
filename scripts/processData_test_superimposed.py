@@ -7,12 +7,23 @@ from gwpy.timeseries import TimeSeries
 
 
 #version_number = "v71"
-version_number = "v61"   # this will be changed
-scale = 500   # this will be changed
-input_version = f"fixed_one_test_{version_number}_random_two_noise_{scale}"
-label_version = f"fixed_one_test_{version_number}"
-output_version = f"fixed_one_test_{version_number}_random_two_noise_{scale}"
+#version_number = "v61"   # this will be changed
+#version_number = "v100"   # this will be changed
+version_number = "v100"   # this will be changed
+#scale = 500   # this will be changed
+scale = 100   # this will be changed
+
+#input_version = f"fixed_one_test_{version_number}_random_two_noise_{scale}"   # this will be changed
+input_version = f"fixed_one_test_{version_number}_random_two_noise_{scale}_shifted"  # this will be changed
+
+# label_version = f"fixed_one_test_{version_number}"   # this will be changed
+label_version = f"fixed_one_test_{version_number}_random_two_noise_100"   # this will be changed
+
+#output_version = f"fixed_one_test_{version_number}_random_two_noise_{scale}"   # this will be changed
+output_version = f"fixed_one_test_{version_number}_random_two_noise_{scale}_shifted"   # this will be changed
 NUM_SPLITS = 1
+
+
 
 
 def get_label(file_path):

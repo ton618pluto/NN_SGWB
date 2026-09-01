@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 1600 900">
+  <defs>
+    <marker id="arrow-signal" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#1F5E8C"/></marker>
+    <marker id="arrow-noise" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#B55C24"/></marker>
+    <marker id="arrow-data" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#347C6C"/></marker>
+    <marker id="arrow-model" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#5B4B8A"/></marker>
+    <style>
+      .title { font: 700 30px Arial, Helvetica, sans-serif; fill: #152235; }
+      .subtitle { font: 16px Arial, Helvetica, sans-serif; fill: #5B6878; }
+      .lane { font: 700 16px Arial, Helvetica, sans-serif; }
+      .box-title { font: 700 17px Arial, Helvetica, sans-serif; fill: #152235; text-anchor: middle; }
+      .box-body { font: 13px Arial, Helvetica, sans-serif; fill: #5B6878; text-anchor: middle; }
+      .note { font: 14px Arial, Helvetica, sans-serif; fill: #5B6878; text-anchor: middle; }
+      .box { stroke-width: 2; rx: 12; ry: 12; }
+      .arrow { fill: none; stroke-width: 2.5; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="white"/>
+  <text x="800" y="55" class="title" text-anchor="middle">End-to-End Framework for Population Hyperparameter Inference</text>
+  <text x="800" y="83" class="subtitle" text-anchor="middle">from noisy multi-event gravitational-wave time series</text>
+  <line x1="70" y1="108" x2="1530" y2="108" stroke="#D8DEE6" stroke-width="1.5"/>
+
+  <text x="85" y="145" class="lane" fill="#1F5E8C">A. Population-level signal simulation</text>
+  <text x="85" y="370" class="lane" fill="#B55C24">B. Noise modeling and signal-preserving augmentation</text>
+  <text x="85" y="610" class="lane" fill="#5B4B8A">C. Amortized posterior inference and validation</text>
+
+  <rect x="110" y="180" width="260" height="125" class="box" fill="#EAF3F8" stroke="#1F5E8C"/>
+  <text x="240" y="223" class="box-title">Population hyperparameters theta</text>
+  <text x="240" y="252" class="box-body"><tspan x="240" dy="0">Prior or Latin-hypercube sampling</tspan><tspan x="240" dy="20">redshift and mass-population parameters</tspan></text>
+
+  <rect x="500" y="180" width="260" height="125" class="box" fill="#EAF3F8" stroke="#1F5E8C"/>
+  <text x="630" y="223" class="box-title">CBC population simulation</text>
+  <text x="630" y="252" class="box-body"><tspan x="630" dy="0">Event parameters, merger times</tspan><tspan x="630" dy="20">and source geometry</tspan></text>
+
+  <rect x="890" y="180" width="260" height="125" class="box" fill="#EAF3F8" stroke="#1F5E8C"/>
+  <text x="1020" y="223" class="box-title">Multi-event GW injection</text>
+  <text x="1020" y="252" class="box-body"><tspan x="1020" dy="0">Coherent H1/L1 detector responses</tspan><tspan x="1020" dy="20">for a 2048 s time-series frame</tspan></text>
+
+  <path d="M370,243 L500,243" class="arrow" stroke="#1F5E8C" marker-end="url(#arrow-signal)"/>
+  <path d="M760,243 L890,243" class="arrow" stroke="#1F5E8C" marker-end="url(#arrow-signal)"/>
+
+  <rect x="110" y="405" width="260" height="125" class="box" fill="#FBEFE7" stroke="#B55C24"/>
+  <text x="240" y="448" class="box-title">O4-like detector spectrum</text>
+  <text x="240" y="477" class="box-body"><tspan x="240" dy="0">Target ASD/PSD for H1 and L1</tspan><tspan x="240" dy="20">noise realizations</tspan></text>
+
+  <rect x="500" y="405" width="260" height="125" class="box" fill="#FBEFE7" stroke="#B55C24"/>
+  <text x="630" y="448" class="box-title">Independent noise generation</text>
+  <text x="630" y="477" class="box-body"><tspan x="630" dy="0">Seeded H1/L1 noise frames</tspan><tspan x="630" dy="20">with controllable amplitude</tspan></text>
+
+  <rect x="890" y="405" width="260" height="125" class="box" fill="#E9F5F1" stroke="#347C6C"/>
+  <text x="1020" y="448" class="box-title">Multi-noise augmentation</text>
+  <text x="1020" y="477" class="box-body"><tspan x="1020" dy="0">One signal frame paired with K</tspan><tspan x="1020" dy="20">independent noise realizations</tspan></text>
+
+  <path d="M370,468 L500,468" class="arrow" stroke="#B55C24" marker-end="url(#arrow-noise)"/>
+  <path d="M760,468 L890,468" class="arrow" stroke="#B55C24" marker-end="url(#arrow-noise)"/>
+  <path d="M1020,305 L1020,405" class="arrow" stroke="#347C6C" marker-end="url(#arrow-data)"/>
+
+  <rect x="1260" y="292" width="210" height="160" class="box" fill="#E9F5F1" stroke="#347C6C"/>
+  <text x="1365" y="340" class="box-title">Noisy two-detector data</text>
+  <text x="1365" y="373" class="box-body"><tspan x="1365" dy="0">d_H1, d_L1</tspan><tspan x="1365" dy="20">signal + noise</tspan><tspan x="1365" dy="20">paired labels theta</tspan></text>
+  <path d="M1150,243 L1260,335" class="arrow" stroke="#347C6C" marker-end="url(#arrow-data)"/>
+  <path d="M1150,468 L1260,410" class="arrow" stroke="#347C6C" marker-end="url(#arrow-data)"/>
+
+  <rect x="110" y="650" width="260" height="125" class="box" fill="#E9F5F1" stroke="#347C6C"/>
+  <text x="240" y="693" class="box-title">Preprocessing</text>
+  <text x="240" y="722" class="box-body"><tspan x="240" dy="0">Segmentation, H1/L1 pairing</tspan><tspan x="240" dy="20">and training-set normalization</tspan></text>
+
+  <rect x="500" y="650" width="260" height="125" class="box" fill="#F0EDF8" stroke="#5B4B8A"/>
+  <text x="630" y="693" class="box-title">Conditional normalizing flow</text>
+  <text x="630" y="722" class="box-body"><tspan x="630" dy="0">Two-detector context encoder and</tspan><tspan x="630" dy="20">conditional density estimator</tspan></text>
+
+  <rect x="890" y="650" width="260" height="125" class="box" fill="#F0EDF8" stroke="#5B4B8A"/>
+  <text x="1020" y="693" class="box-title">Joint posterior</text>
+  <text x="1020" y="722" class="box-body"><tspan x="1020" dy="0">p(theta | d_H1, d_L1)</tspan><tspan x="1020" dy="20">marginal and joint constraints</tspan></text>
+
+  <rect x="1260" y="650" width="210" height="125" class="box" fill="#EDF5EC" stroke="#486F4A"/>
+  <text x="1365" y="693" class="box-title">Validation</text>
+  <text x="1365" y="722" class="box-body"><tspan x="1365" dy="0">MAE, NLL, coverage, CI</tspan><tspan x="1365" dy="20">and noise robustness</tspan></text>
+
+  <path d="M1365,452 L1365,585 L240,585 L240,650" class="arrow" stroke="#347C6C" marker-end="url(#arrow-data)"/>
+  <path d="M370,712 L500,712" class="arrow" stroke="#5B4B8A" marker-end="url(#arrow-model)"/>
+  <path d="M760,712 L890,712" class="arrow" stroke="#5B4B8A" marker-end="url(#arrow-model)"/>
+  <path d="M1150,712 L1260,712" class="arrow" stroke="#5B4B8A" marker-end="url(#arrow-model)"/>
+
+  <line x1="150" y1="818" x2="1450" y2="818" stroke="#D8DEE6" stroke-width="1.5"/>
+  <text x="800" y="850" class="note">Key design: signal-preserving multi-noise augmentation improves robustness to noise realizations</text>
+  <text x="800" y="873" class="note">while preserving the population-level label theta for each simulated signal.</text>
+</svg>

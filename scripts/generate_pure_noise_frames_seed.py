@@ -19,16 +19,19 @@ BASE_SEED = 42
 #version = 'v0512'
 # version = 'v999'   # 数据集版本号
 version = 'v100'
+#version = 'v61_extra_noise'
 start_job = 1
 #end_job = 4
 #end_job = 23
 #end_job = 43   # frame数量
 #end_job = 100000
 #end_job = 1
-end_job = 300000
+end_job = 300000 # v100
+#end_job = 20
+
 #NOISE_SCALE_FACTOR = 1 / 1000
 NOISE_SCALE_FACTOR = 1
-#end_job = 100000
+
 #sampling_frequency = 32.0  # 采样率
 sampling_frequency = 512.0  # 采样率
 

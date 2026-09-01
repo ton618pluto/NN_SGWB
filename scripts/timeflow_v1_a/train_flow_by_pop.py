@@ -11,14 +11,17 @@ from torch import optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from dataset import GWDatasetV1A, PARAMETER_NAMES
+from dataset import GWDatasetV1A, PARAMETER_NAMES, _filter_label
 from model import GWFlowModelV1A
 from model2 import GWFlowModelV1A_Model2
 
 
 # Keep these settings aligned with train_flow.py unless you intentionally want a different run.
 #DATA_VERSION = "v61_random_two_noise"
-DATA_VERSION = "v61_random_two_noise_500"
+#DATA_VERSION = "v61_random_two_noise_500"
+#DATA_VERSION = "v61_random_two_noise_200"
+#DATA_VERSION = "v61_random_two_noise_100"
+DATA_VERSION = "v100_random_two_noise_100"
 #DATA_VERSION = "v100"
 USE_MODEL2 = False
 folder = "processed_data_superimposed"
@@ -27,7 +30,8 @@ USE_QUIET_LOGGING = False
 TRAIN_SAMPLE_STEP = 1
 VAL_FRACTION = 0.1
 TEST_FRACTION = 0.1
-BATCH_SIZE = 64
+#BATCH_SIZE = 64
+BATCH_SIZE = 16
 EPOCHS = 10
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-4
@@ -39,10 +43,12 @@ FLOW_BINS = 8
 FLOW_TAIL_BOUND = 3.0
 SEED = 42
 AUTO_RESUME = True
-GPU_INDEX = 0
+GPU_INDEX = 1
 PREVIEW_NUM_SAMPLES = 50
 PREVIEW_NUM_FEATURES = 500
 SAVE_EPOCH_CHECKPOINTS_AFTER = 5
+LABEL_STATS_PROGRESS_EVERY = 10000
+FEATURE_STATS_PROGRESS_EVERY = 10000
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 VERSION_DIR = Path(__file__).resolve().parent
 POP_PATTERN = re.compile(r"(pop\d{5})")
@@ -74,28 +80,224 @@ def load_stats_cache(path: Path):
     if not path.exists():
         return None
     with np.load(path, allow_pickle=False) as cache:
-        return {
-            "label_mean": torch.tensor(cache["label_mean"], dtype=torch.float32),
-            "label_std": torch.tensor(cache["label_std"], dtype=torch.float32),
-            "feature_mean": torch.tensor(cache["feature_mean"], dtype=torch.float32),
-            "feature_std": torch.tensor(cache["feature_std"], dtype=torch.float32),
-        }
+        stats = {}
+        if "label_mean" in cache and "label_std" in cache:
+            stats["label_mean"] = torch.tensor(cache["label_mean"], dtype=torch.float32)
+            stats["label_std"] = torch.tensor(cache["label_std"], dtype=torch.float32)
+        if "feature_mean" in cache and "feature_std" in cache:
+            stats["feature_mean"] = torch.tensor(cache["feature_mean"], dtype=torch.float32)
+            stats["feature_std"] = torch.tensor(cache["feature_std"], dtype=torch.float32)
+        return stats
 
 
 def save_stats_cache(
     path: Path,
-    label_mean: torch.Tensor,
-    label_std: torch.Tensor,
-    feature_mean: torch.Tensor,
-    feature_std: torch.Tensor,
+    label_mean: torch.Tensor | None = None,
+    label_std: torch.Tensor | None = None,
+    feature_mean: torch.Tensor | None = None,
+    feature_std: torch.Tensor | None = None,
+) -> None:
+    payload = {}
+    if label_mean is not None and label_std is not None:
+        payload["label_mean"] = label_mean.cpu().numpy()
+        payload["label_std"] = label_std.cpu().numpy()
+    if feature_mean is not None and feature_std is not None:
+        payload["feature_mean"] = feature_mean.cpu().numpy()
+        payload["feature_std"] = feature_std.cpu().numpy()
+    np.savez(path, **payload)
+
+
+def load_label_stats_progress(path: Path):
+    if not path.exists():
+        return None
+    with np.load(path, allow_pickle=False) as cache:
+        return {
+            "label_sum": cache["label_sum"].astype(np.float64),
+            "label_sq_sum": cache["label_sq_sum"].astype(np.float64),
+            "total_samples": int(cache["total_samples"]),
+            "next_record_index": int(cache["next_record_index"]),
+        }
+
+
+def save_label_stats_progress(
+    path: Path,
+    label_sum: np.ndarray,
+    label_sq_sum: np.ndarray,
+    total_samples: int,
+    next_record_index: int,
 ) -> None:
     np.savez(
         path,
-        label_mean=label_mean.cpu().numpy(),
-        label_std=label_std.cpu().numpy(),
-        feature_mean=feature_mean.cpu().numpy(),
-        feature_std=feature_std.cpu().numpy(),
+        label_sum=np.asarray(label_sum, dtype=np.float64),
+        label_sq_sum=np.asarray(label_sq_sum, dtype=np.float64),
+        total_samples=np.asarray(total_samples, dtype=np.int64),
+        next_record_index=np.asarray(next_record_index, dtype=np.int64),
     )
+
+
+def compute_label_stats_with_resume(
+    records: list[dict],
+    progress_path: Path,
+    dataset_name: str = "train",
+) -> tuple[torch.Tensor, torch.Tensor]:
+    progress = load_label_stats_progress(progress_path)
+    label_dim = len(PARAMETER_NAMES)
+    if progress is None:
+        label_sum = np.zeros(label_dim, dtype=np.float64)
+        label_sq_sum = np.zeros(label_dim, dtype=np.float64)
+        total_samples = 0
+        start_index = 0
+    else:
+        label_sum = progress["label_sum"]
+        label_sq_sum = progress["label_sq_sum"]
+        total_samples = progress["total_samples"]
+        start_index = progress["next_record_index"]
+        print(
+            f"Resuming label stats from {progress_path}: "
+            f"next_record_index={start_index}, total_samples={total_samples}"
+        )
+
+    iterator = range(start_index, len(records))
+    if not USE_QUIET_LOGGING:
+        iterator = tqdm(
+            iterator,
+            desc=f"[{dataset_name}] Loading labels",
+            unit="file",
+            initial=start_index,
+            total=len(records),
+        )
+
+    for index in iterator:
+        sample = np.load(records[index]["h1"], allow_pickle=True).item()
+        label = _filter_label(sample["label"]).astype(np.float64)
+        label_sum += label
+        label_sq_sum += np.square(label)
+        total_samples += 1
+
+        processed = index + 1
+        if processed % LABEL_STATS_PROGRESS_EVERY == 0:
+            save_label_stats_progress(
+                progress_path,
+                label_sum,
+                label_sq_sum,
+                total_samples,
+                processed,
+            )
+
+    if total_samples <= 0:
+        raise RuntimeError("Label stats computation saw zero samples.")
+
+    mean = label_sum / total_samples
+    var = label_sq_sum / total_samples - np.square(mean)
+    #var = np.maximum(var, 0.0)
+    std = np.sqrt(var)
+    std[std == 0] = 1.0
+
+    if progress_path.exists():
+        progress_path.unlink()
+
+    return torch.tensor(mean.astype(np.float32)), torch.tensor(std.astype(np.float32))
+
+
+def load_feature_stats_progress(path: Path):
+    if not path.exists():
+        return None
+    with np.load(path, allow_pickle=False) as cache:
+        return {
+            "channel_sum": cache["channel_sum"].astype(np.float64),
+            "channel_sq_sum": cache["channel_sq_sum"].astype(np.float64),
+            "total_count": int(cache["total_count"]),
+            "next_record_index": int(cache["next_record_index"]),
+        }
+
+
+def save_feature_stats_progress(
+    path: Path,
+    channel_sum: np.ndarray,
+    channel_sq_sum: np.ndarray,
+    total_count: int,
+    next_record_index: int,
+) -> None:
+    np.savez(
+        path,
+        channel_sum=np.asarray(channel_sum, dtype=np.float64),
+        channel_sq_sum=np.asarray(channel_sq_sum, dtype=np.float64),
+        total_count=np.asarray(total_count, dtype=np.int64),
+        next_record_index=np.asarray(next_record_index, dtype=np.int64),
+    )
+
+
+def compute_feature_stats_with_resume(
+    records: list[dict],
+    progress_path: Path,
+    dataset_name: str = "train",
+) -> tuple[torch.Tensor, torch.Tensor]:
+    progress = load_feature_stats_progress(progress_path)
+    if progress is None:
+        channel_sum = np.zeros(2, dtype=np.float64)
+        channel_sq_sum = np.zeros(2, dtype=np.float64)
+        total_count = 0
+        start_index = 0
+    else:
+        channel_sum = progress["channel_sum"]
+        channel_sq_sum = progress["channel_sq_sum"]
+        total_count = progress["total_count"]
+        start_index = progress["next_record_index"]
+        print(
+            f"Resuming feature stats from {progress_path}: "
+            f"next_record_index={start_index}, total_count={total_count}"
+        )
+
+    temp_dataset = GWDatasetV1A(
+        records=records,
+        dataset_name=f"{dataset_name}_feature_stats",
+        label_mean=torch.zeros(len(PARAMETER_NAMES), dtype=torch.float32),
+        label_std=torch.ones(len(PARAMETER_NAMES), dtype=torch.float32),
+        feature_mean=torch.zeros(2, dtype=torch.float32),
+        feature_std=torch.ones(2, dtype=torch.float32),
+    )
+
+    iterator = range(start_index, len(records))
+    if not USE_QUIET_LOGGING:
+        iterator = tqdm(
+            iterator,
+            desc=f"[{dataset_name}] Loading feature stats",
+            unit="file",
+            initial=start_index,
+            total=len(records),
+        )
+
+    for index in iterator:
+        record = records[index]
+        h1 = temp_dataset._load_channel(record["h1"])
+        l1 = temp_dataset._load_channel(record["l1"])
+        features = np.stack([h1, l1], axis=0).astype(np.float64)
+        channel_sum += features.sum(axis=1)
+        channel_sq_sum += np.square(features).sum(axis=1)
+        total_count += features.shape[1]
+
+        processed = index + 1
+        if processed % FEATURE_STATS_PROGRESS_EVERY == 0:
+            save_feature_stats_progress(
+                progress_path,
+                channel_sum,
+                channel_sq_sum,
+                total_count,
+                processed,
+            )
+
+    if total_count <= 0:
+        raise RuntimeError("Feature stats computation saw zero samples.")
+
+    mean = channel_sum / total_count
+    var = channel_sq_sum / total_count - np.square(mean)
+    # var = np.maximum(var, 1e-12)
+    std = np.sqrt(var)
+
+    if progress_path.exists():
+        progress_path.unlink()
+
+    return torch.tensor(mean.astype(np.float32)), torch.tensor(std.astype(np.float32))
 
 
 def evaluate_epoch(model, loader, device):
@@ -234,9 +436,34 @@ def main() -> None:
     )
 
     stats_cache_path = output_dir / "normalization_stats_v1_a.npz"
+    label_progress_path = output_dir / "label_stats_progress_v1_a.npz"
+    feature_progress_path = output_dir / "feature_stats_progress_v1_a.npz"
     cached_stats = load_stats_cache(stats_cache_path)
-    if cached_stats is not None:
+    if cached_stats:
         print(f"Loaded normalization cache: {stats_cache_path}")
+
+    if cached_stats is None or "label_mean" not in cached_stats or "label_std" not in cached_stats:
+        label_mean, label_std = compute_label_stats_with_resume(
+            train_records,
+            progress_path=label_progress_path,
+            dataset_name="train",
+        )
+        existing_feature_mean = None if not cached_stats else cached_stats.get("feature_mean")
+        existing_feature_std = None if not cached_stats else cached_stats.get("feature_std")
+        save_stats_cache(
+            stats_cache_path,
+            label_mean=label_mean,
+            label_std=label_std,
+            feature_mean=existing_feature_mean,
+            feature_std=existing_feature_std,
+        )
+        print(f"Saved label normalization cache: {stats_cache_path}")
+        if cached_stats is None:
+            cached_stats = {}
+        cached_stats["label_mean"] = label_mean
+        cached_stats["label_std"] = label_std
+
+    if "feature_mean" in cached_stats and "feature_std" in cached_stats:
         train_dataset = GWDatasetV1A(
             records=train_records,
             dataset_name="train",
@@ -246,15 +473,27 @@ def main() -> None:
             feature_std=cached_stats["feature_std"],
         )
     else:
-        train_dataset = GWDatasetV1A(records=train_records, dataset_name="train")
+        feature_mean, feature_std = compute_feature_stats_with_resume(
+            train_records,
+            progress_path=feature_progress_path,
+            dataset_name="train",
+        )
+        train_dataset = GWDatasetV1A(
+            records=train_records,
+            dataset_name="train",
+            label_mean=cached_stats["label_mean"],
+            label_std=cached_stats["label_std"],
+            feature_mean=feature_mean,
+            feature_std=feature_std,
+        )
         save_stats_cache(
             stats_cache_path,
-            train_dataset.label_mean,
-            train_dataset.label_std,
-            train_dataset.feature_mean,
-            train_dataset.feature_std,
+            label_mean=train_dataset.label_mean,
+            label_std=train_dataset.label_std,
+            feature_mean=train_dataset.feature_mean,
+            feature_std=train_dataset.feature_std,
         )
-        print(f"Saved normalization cache: {stats_cache_path}")
+        print(f"Saved full normalization cache: {stats_cache_path}")
 
     val_dataset = GWDatasetV1A(
         records=val_records,

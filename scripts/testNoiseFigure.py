@@ -15,11 +15,14 @@ plt.rcParams["font.sans-serif"] = ["DejaVu Sans", "Arial", "Liberation Sans"]
 plt.rcParams["axes.unicode_minus"] = False
 
 # --- Configuration ---
-NOISE_VERSION = "v99999"  # Noise dataset version under noise_waveform/.
-JOB_NUMBER = 1  # Job index to visualize.
+#NOISE_VERSION = "v99999"  # Noise dataset version under noise_waveform/.
+#NOISE_VERSION = "v611"
+#NOISE_VERSION = "v0032"
+NOISE_VERSION = "v100_shifted_asd"
+JOB_NUMBER = 2  # Job index to visualize.
+#JOB_NUMBER = 40  # Job index to visualize.
 DETECTORS = ["H1", "L1"]  # Detector names to plot.
 BASE_OUTPUT_DIR = "plots_noise"  # Output directory.
-DURATION_TO_PLOT = 10.0  # Plot only the first 1.0 seconds.
 
 
 if not os.path.exists(BASE_OUTPUT_DIR):
@@ -47,8 +50,7 @@ def visualize_h1_l1_time_series_comparison(job_number, output_dir):
         try:
             full_strain = TimeSeries.read(full_path, channel=channel_name)
 
-            num_samples = int(DURATION_TO_PLOT * full_strain.sample_rate.value)
-            all_strain_data[detector_name] = full_strain[:num_samples]
+            all_strain_data[detector_name] = full_strain
             print(f"Loaded {detector_name} data successfully.")
 
         except Exception as e:
@@ -68,7 +70,7 @@ def visualize_h1_l1_time_series_comparison(job_number, output_dir):
     plt.ylabel(r"Strain (m/$m$)")
     plt.title(
         f"H1 and L1 Noise Time Series Comparison "
-        f"(Job {job_number}, First {DURATION_TO_PLOT}s)"
+        f"(Job {job_number}, Full 2048s)"
     )
     plt.legend()
     plt.grid(True)

@@ -8,21 +8,29 @@ import pandas as pd
 from gwpy.timeseries import TimeSeries
 
 
-POP_NUMS = 100000 # this will be changed
+#POP_NUMS = 100000 # this will be changed
+POP_NUMS = 300000 # this will be changed
 FRAME_NUMS = 1
-version = "v61"  # this will be changed
+#version = "v61"  # this will be changed
+version = "v100"  # this will be changed
 LABEL_VERSION = version
-OUTPUT_VERSION = "v61_random_two_noise_200" # this will be changed
+#OUTPUT_VERSION = "v61_random_two_noise_200" # this will be changed
+#OUTPUT_VERSION = "v61_random_two_noise_100" # this will be changed
+OUTPUT_VERSION = "v100_random_two_noise_100" # this will be changed
 
 DETECTORS = ["H1"]
 
 STRAIN_CHANNEL_SUFFIX = "TEST_INJ"
-NOISE_SCALE = 5.0  # this will be changed
+#NOISE_SCALE = 5.0  # this will be changed
+#NOISE_SCALE = 10.0  # this will be changed
+NOISE_SCALE = 1/100.0  # this will be changed
+
 NOISES_PER_SIGNAL = 2 # this will be changed
 RANDOM_SEED = 42
 NUM_SPLITS = 1
+PROGRESS_EVERY_POPS = 1000
 
-POP_PATTERN = re.compile(r"(pop\d{5})")
+POP_PATTERN = re.compile(r"(pop\d+)")
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 SIGNAL_ROOT = SCRIPTS_DIR / "training_set" / version / "training_set0"
@@ -115,6 +123,22 @@ def save_superimposed_as_npy(
                 noise_dir / f"{detector_name}-STRAIN-{noise_number:05d}-duration.gwf"
                 for noise_number in noise_numbers
             ]
+            output_groups = []
+            for noise_slot in range(noises_per_signal):
+                expanded_sample_num = frame_num * noises_per_signal + noise_slot
+                base_name = (
+                    f"{detector_name}-SUPERIMPOSED-pop{pop_num:05d}_sample{expanded_sample_num:05d}"
+                )
+                split_paths = [
+                    output_dir / f"{base_name}_p{split_index}.npy"
+                    for split_index in range(num_splits)
+                ]
+                output_groups.append((noise_slot, expanded_sample_num, split_paths))
+
+            # Avoid reading large GWF files when every expected output already exists.
+            if all(all(path.exists() for path in split_paths) for _, _, split_paths in output_groups):
+                skipped_existing += noises_per_signal
+                continue
 
             if not signal_path.exists():
                 skipped_missing += noises_per_signal
@@ -146,22 +170,11 @@ def save_superimposed_as_npy(
                 total_length = len(signal_data)
                 split_length = total_length // num_splits
 
-                for noise_slot, noise_ts in enumerate(noise_series):
-                    expanded_sample_num = frame_num * noises_per_signal + noise_slot
-                    base_name = (
-                        f"{detector_name}-SUPERIMPOSED-pop{pop_num:05d}_sample{expanded_sample_num:05d}"
-                    )
-                    split_paths = [
-                        output_dir / f"{base_name}_p{split_index}.npy"
-                        for split_index in range(num_splits)
-                    ]
+                for noise_slot, expanded_sample_num, split_paths in output_groups:
+                    noise_ts = noise_series[noise_slot]
 
                     if all(path.exists() for path in split_paths):
                         skipped_existing += 1
-                        print(
-                            f"  - Skip {pop_id}_sample{frame_num:05d} -> "
-                            f"sample{expanded_sample_num:05d}: output already exists."
-                        )
                         continue
 
                     noise_data = np.asarray(noise_ts.value, dtype=np.float32)
@@ -199,7 +212,7 @@ def save_superimposed_as_npy(
                 print(f"  - Failed {pop_id}_sample{frame_num:05d}: {exc}")
 
         completed_pops = pop_num + 1
-        if completed_pops % 10 == 0 or completed_pops == pop_nums:
+        if completed_pops % PROGRESS_EVERY_POPS == 0 or completed_pops == pop_nums:
             print(f"[{detector_name}] Completed {completed_pops}/{pop_nums} pops.")
 
     print(

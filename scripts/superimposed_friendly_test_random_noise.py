@@ -6,14 +6,28 @@ from gwpy.timeseries import TimeSeries
 
 POP_NUMS = 1
 FRAME_NUMS = 10
-BASE_VERSION = "v61"   # this will be changed
-SIGNAL_VERSION = f"fixed_one_test_{BASE_VERSION}"
+
+#BASE_VERSION = "v61"   # this will be changed
+BASE_VERSION = "v100"   # this will be changed
+SIGNAL_VERSION = f"fixed_one_test_{BASE_VERSION}_random_two_noise_100"
+
 NOISE_VERSION = BASE_VERSION
-OUTPUT_VERSION = f"fixed_one_test_{BASE_VERSION}_random_two_noise_500"   # this will be changed
+#NOISE_VERSION = f"{BASE_VERSION}_extra_noise"
+
+#OUTPUT_VERSION = f"fixed_one_test_{BASE_VERSION}_random_two_noise_500"   # this will be changed
+OUTPUT_VERSION = f"fixed_one_test_{BASE_VERSION}_random_two_noise_100"   # this will be changed
+
 DETECTORS = ["H1", "L1"]
 STRAIN_CHANNEL_SUFFIX = "TEST_INJ"
-NOISE_SCALE = 2.0   # this will be changed
-END_NOISE_NUM = 100000   # this will be changed
+
+#NOISE_SCALE = 2.0   # this will be changed
+#NOISE_SCALE = 10.0   # this will be changed
+NOISE_SCALE = 1/100.0   # this will be changed,v100 is 1/100
+
+#END_NOISE_NUM = 100000   # this will be changed
+END_NOISE_NUM = 300000   # this will be changed
+#END_NOISE_NUM = 20   # this will be changed
+
 RANDOM_SEED = 42
 
 SCRIPTS_DIR = Path(__file__).resolve().parent

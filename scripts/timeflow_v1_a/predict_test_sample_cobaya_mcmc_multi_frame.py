@@ -30,14 +30,19 @@ BASE_VERSION = "v61"
 #BASE_VERSION = "v81"
 #BASE_VERSION = "v70"
 #BASE_VERSION = "v71"
+#BASE_VERSION = "v100"
 TRAIN_DATA_VERSION = BASE_VERSION
+
 #input_folder="processed_data_test" # this will be changed,processed_data_test is "signal",processed_data_test_superimposed is "signal+noise"
 input_folder="processed_data_test_superimposed" # this will be changed,processed_data_test is "signal",processed_data_test_superimposed is "signal+noise"
-TEST_DATA_VERSION = f"fixed_one_test_{BASE_VERSION}"
+
+TEST_DATA_VERSION = f"fixed_one_test_{BASE_VERSION}_fixed_noise"
+#TEST_DATA_VERSION = f"fixed_one_test_{BASE_VERSION}"
+
 USE_MODEL2 = False
 TEST_SAMPLE_INDEX = 0
 #NUM_FRAMES = 10   # can be changed
-NUM_FRAMES = 3   # can be changed
+NUM_FRAMES = 4   # can be changed
 #NUM_FRAMES = 1
 GPU_INDEX = 1
 SEED = 42
@@ -51,9 +56,11 @@ RMINUS1_STOP = 0.03
 RMINUS1_CL_STOP = 0.2
 SAVE_TEXT_SUMMARY = False
 SAVE_COBAYA_CHAIN = False
-USE_INPUT_SCALE = True
+#USE_INPUT_SCALE = True
+USE_INPUT_SCALE = False
 INPUT_SCALE = 1e23
-USE_PER_SAMPLE_DEMEAN = True
+#USE_PER_SAMPLE_DEMEAN = True
+USE_PER_SAMPLE_DEMEAN = False
 
 
 DATA_VERSION_RANGE_OVERRIDES = {
@@ -443,7 +450,7 @@ def main() -> None:
                     ax.plot(x_grid, y_grid, color="#4DAA57", linewidth=1.8)
                 else:
                     ax.hist(samples, bins=40, density=True, color="#4DAA57", alpha=0.35)
-                ax.axvline(label_true[col], color="#BDBDBD", linestyle="--", linewidth=1.0)
+                ax.axvline(label_true[col], color="red", linestyle="--", linewidth=1.0)
                 ax.set_title(PARAMETER_NAMES_RUNTIME[col])
                 ax.set_xlim(*x_limits)
                 ax.set_yticks([])

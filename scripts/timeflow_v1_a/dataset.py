@@ -28,20 +28,21 @@ PARAMETER_SPECS = {
 # Only edit this list when you want to change the training labels.
 #SELECTED_PARAMETERS = ["alpha_m","delta_m","mu_m","sigma_m"]
 #SELECTED_PARAMETERS = ["mu_m","sigma_m"]
-SELECTED_PARAMETERS = ["zp","alpha_m"]
+#SELECTED_PARAMETERS = ["zp","alpha_m"]
 #SELECTED_PARAMETERS = ["zp", "delta_m","beta_q"]
-#SELECTED_PARAMETERS = ["zp", "alpha_m","delta_m","beta_q"]
+#SELECTED_PARAMETERS = ["zp", "alpha_m","delta_m","beta_q"]    # v61
 #SELECTED_PARAMETERS = ["zp", "alpha_m","delta_m","sigma_m","beta_q"]
 #SELECTED_PARAMETERS = ["zp", "alpha_m","delta_m","mu_m","beta_q"]
 #SELECTED_PARAMETERS = ["zp", "alpha_m","delta_m","mu_m","sigma_m","beta_q"]
-#SELECTED_PARAMETERS = ["zp", "alpha_z","beta_z","alpha_m","delta_m","mu_m","sigma_m","beta_q"]
+SELECTED_PARAMETERS = ["zp", "alpha_z","beta_z","alpha_m","delta_m","mu_m","sigma_m","beta_q"]  # v100
 #SELECTED_PARAMETERS = ["zp","alpha_z","beta_z", "alpha_m","delta_m","beta_q"]
 #SELECTED_PARAMETERS = ["zp", "alpha_m","delta_m","lambda_peak","mu_m","sigma_m","beta_q"]
 
 PARAMETER_NAMES = list(SELECTED_PARAMETERS)
 LABEL_INDICES = [PARAMETER_SPECS[name]["index"] for name in SELECTED_PARAMETERS]
 PARAMETER_RANGES = {name: PARAMETER_SPECS[name]["range"] for name in SELECTED_PARAMETERS}
-USE_INPUT_SCALE = True
+#USE_INPUT_SCALE = True
+USE_INPUT_SCALE = False
 #USE_PER_SAMPLE_DEMEAN = True
 USE_PER_SAMPLE_DEMEAN = False
 INPUT_SCALE = 1e23
@@ -198,7 +199,7 @@ class GWDatasetV1A(Dataset):
             total_count += features.shape[1]
         mean = channel_sum / total_count
         var = channel_sq_sum / total_count - np.square(mean)
-        var = np.maximum(var, 1e-12)
+#        var = np.maximum(var, 1e-12)
         std = np.sqrt(var)
         return mean.astype(np.float32), std.astype(np.float32)
 
