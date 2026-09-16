@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from matplotlib.lines import Line2D
+from matplotlib.ticker import MaxNLocator
 from scipy.stats import gaussian_kde
 
 from dataset import PARAMETER_SPECS
@@ -26,13 +29,16 @@ except ImportError:
 #BASE_VERSION = "v61"
 #BASE_VERSION = "v61_500"
 #BASE_VERSION = "v61_random_two_noise_500"
-BASE_VERSION = "v61_random_two_noise_100"
+#BASE_VERSION = "v61_random_two_noise_100"
 #BASE_VERSION = "v64"
 #BASE_VERSION = "v80"
 #BASE_VERSION = "v81"
 #BASE_VERSION = "v70"
 #BASE_VERSION = "v71"
 #BASE_VERSION = "v100"
+BASE_VERSION = "v100_random_two_noise_100"
+#BASE_VERSION = "v61_random_one_noise_1000"
+#BASE_VERSION = "v61_random_two_noise_1000"
 
 #input_folder="processed_data_test" # this will be changed,processed_data_test is "signal",processed_data_test_superimposed is "signal+noise"
 input_folder="processed_data_test_superimposed" # this will be changed,processed_data_test is "signal",processed_data_test_superimposed is "signal+noise"
@@ -44,10 +50,12 @@ TEST_DATA_VERSION = f"fixed_one_test_{BASE_VERSION}"
 
 USE_MODEL2 = False
 TEST_SAMPLE_INDEX = 0   # pop num , is no changed
-#FRAME_INDEX = 1  # test frame of id,start of 0,can be changed
+
+FRAME_INDEX = 4  # test frame of id,start of 0,can be changed
 #FRAME_INDEX = 6  # test frame of id,start of 0
 #FRAME_INDEX = 5  # test frame of id,start of 0
-FRAME_INDEX = 3  # test frame of id,start of 0
+#FRAME_INDEX = 0  # test frame of id,start of 0
+
 GPU_INDEX = 0
 SEED = 42
 MAX_SAMPLES = 20000
@@ -57,6 +65,13 @@ RMINUS1_STOP = 0.03
 RMINUS1_CL_STOP = 0.2
 SAVE_TEXT_SUMMARY = False
 SAVE_COBAYA_CHAIN = False
+USE_POSTERIOR_CACHE = True
+REBUILD_POSTERIOR_CACHE = False
+
+# Whether to draw and save the posterior corner plot. Keep False when only the
+# numerical posterior summary/TXT output is needed.
+PLOT_POSTERIOR = False
+
 USE_INPUT_SCALE = False
 #USE_INPUT_SCALE = True
 INPUT_SCALE = 1e23
@@ -222,6 +237,42 @@ def _collection_to_array(collection, parameter_names: list[str]) -> np.ndarray:
     raise RuntimeError("Unable to convert Cobaya sample collection to numpy array.")
 
 
+def _save_posterior_cache(
+    cache_path: Path,
+    posterior_norm: np.ndarray,
+    metadata: dict[str, object],
+) -> None:
+    temporary_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
+    with temporary_path.open("wb") as handle:
+        np.savez_compressed(
+            handle,
+            posterior_norm=np.asarray(posterior_norm, dtype=np.float64),
+            metadata_json=np.asarray(json.dumps(metadata, sort_keys=True)),
+        )
+    temporary_path.replace(cache_path)
+
+
+def _load_posterior_cache(
+    cache_path: Path,
+    expected_metadata: dict[str, object],
+    expected_parameter_count: int,
+) -> np.ndarray:
+    with np.load(cache_path, allow_pickle=False) as saved:
+        posterior_norm = np.asarray(saved["posterior_norm"], dtype=np.float64)
+        saved_metadata_json = str(saved["metadata_json"].item())
+
+    if saved_metadata_json != json.dumps(expected_metadata, sort_keys=True):
+        raise ValueError("posterior cache metadata does not match the current run")
+    if (
+        posterior_norm.ndim != 2
+        or posterior_norm.shape[0] == 0
+        or posterior_norm.shape[1] != expected_parameter_count
+        or not np.all(np.isfinite(posterior_norm))
+    ):
+        raise ValueError(f"invalid cached posterior shape or values: {posterior_norm.shape}")
+    return posterior_norm
+
+
 def _build_output_dir() -> Path:
     output_name = f"outputs_dataset_{TRAIN_DATA_VERSION}"
     if USE_MODEL2:
@@ -316,9 +367,6 @@ def _load_single_frame_data(
 
 
 def main() -> None:
-    if cobaya_run is None:
-        raise ImportError("Cobaya is not installed. Please install `cobaya` before running this script.")
-
     np.random.seed(SEED)
     torch.manual_seed(SEED)
 
@@ -375,37 +423,115 @@ def main() -> None:
         figure_dir
         / f"cobaya_chain_singleframe_{TRAIN_DATA_VERSION}_{TEST_DATA_VERSION}_{model_tag}_pop{TEST_SAMPLE_INDEX:05d}_f{FRAME_INDEX:02d}"
     )
-    info = {
-        "force": True,
-        "resume": False,
-        "params": params_info,
-        "likelihood": {
-            "flow_posterior_single_frame": {
-                "external": flow_target_logp,
-                "input_params": norm_parameter_names,
-            }
+    posterior_cache_path = (
+        figure_dir
+        / f"singleframe_posterior_cache_{TRAIN_DATA_VERSION}_{TEST_DATA_VERSION}_"
+        f"{model_tag}_pop{TEST_SAMPLE_INDEX:05d}_f{FRAME_INDEX:02d}.npz"
+    )
+    checkpoint_name = "best_flow_v1_a_model2.pt" if USE_MODEL2 else "best_flow_v1_a.pt"
+    checkpoint_path = _build_output_dir() / checkpoint_name
+    checkpoint_stat = checkpoint_path.stat()
+    posterior_cache_metadata = {
+        "format_version": 1,
+        "train_data_version": TRAIN_DATA_VERSION,
+        "test_data_version": TEST_DATA_VERSION,
+        "input_folder": input_folder,
+        "model_variant": run_config.get("model_variant", "model1"),
+        "checkpoint_name": checkpoint_name,
+        "checkpoint_size": checkpoint_stat.st_size,
+        "checkpoint_mtime_ns": checkpoint_stat.st_mtime_ns,
+        "test_sample_index": TEST_SAMPLE_INDEX,
+        "frame_index": FRAME_INDEX,
+        "h1_file": {
+            "path": str(h1_path),
+            "size": h1_path.stat().st_size,
+            "mtime_ns": h1_path.stat().st_mtime_ns,
         },
-        "sampler": {
-            "mcmc": {
-                "max_samples": MAX_SAMPLES,
-                "learn_proposal": True,
-                "Rminus1_stop": RMINUS1_STOP,
-                "Rminus1_cl_stop": RMINUS1_CL_STOP,
-                "measure_speeds": False,
-            }
+        "l1_file": {
+            "path": str(l1_path),
+            "size": l1_path.stat().st_size,
+            "mtime_ns": l1_path.stat().st_mtime_ns,
         },
+        "parameter_names": list(parameter_names),
+        "label_mean": label_mean_array.tolist(),
+        "label_std": label_std_array.tolist(),
+        "feature_mean": feature_mean.astype(np.float64).tolist(),
+        "feature_std": feature_std.astype(np.float64).tolist(),
+        "normalized_prior_abs_max": NORMALIZED_PRIOR_ABS_MAX,
+        "max_samples": MAX_SAMPLES,
+        "proposal_std": PROPOSAL_STD,
+        "rminus1_stop": RMINUS1_STOP,
+        "rminus1_cl_stop": RMINUS1_CL_STOP,
+        "seed": SEED,
     }
-    if SAVE_COBAYA_CHAIN:
-        info["output"] = chain_prefix
 
-    _, sampler = cobaya_run(info, force=True)
-    posterior_norm = _collection_to_array(sampler.products()["sample"], norm_parameter_names)
+    posterior_norm = None
+    loaded_posterior_cache = False
+    if USE_POSTERIOR_CACHE and posterior_cache_path.exists() and not REBUILD_POSTERIOR_CACHE:
+        try:
+            posterior_norm = _load_posterior_cache(
+                posterior_cache_path,
+                posterior_cache_metadata,
+                len(parameter_names),
+            )
+            loaded_posterior_cache = True
+            print(
+                f"Loaded posterior cache: {posterior_cache_path} "
+                f"({posterior_norm.shape[0]} samples); skipping Cobaya sampling."
+            )
+        except Exception as exc:
+            print(f"Ignoring incompatible posterior cache {posterior_cache_path}: {exc}")
+
+    if posterior_norm is None:
+        if cobaya_run is None:
+            raise ImportError(
+                "Cobaya is not installed and no compatible posterior cache is available. "
+                "Please install `cobaya` before sampling."
+            )
+
+        info = {
+            "force": True,
+            "resume": False,
+            "params": params_info,
+            "likelihood": {
+                "flow_posterior_single_frame": {
+                    "external": flow_target_logp,
+                    "input_params": norm_parameter_names,
+                }
+            },
+            "sampler": {
+                "mcmc": {
+                    "max_samples": MAX_SAMPLES,
+                    "learn_proposal": True,
+                    "Rminus1_stop": RMINUS1_STOP,
+                    "Rminus1_cl_stop": RMINUS1_CL_STOP,
+                    "measure_speeds": False,
+                }
+            },
+        }
+        if SAVE_COBAYA_CHAIN:
+            info["output"] = chain_prefix
+
+        _, sampler = cobaya_run(info, force=True)
+        posterior_norm = _collection_to_array(
+            sampler.products()["sample"], norm_parameter_names
+        )
+        if USE_POSTERIOR_CACHE:
+            _save_posterior_cache(
+                posterior_cache_path,
+                posterior_norm,
+                posterior_cache_metadata,
+            )
+            print(f"Saved posterior cache before plotting: {posterior_cache_path}")
+
     posterior = posterior_norm * label_std_array + label_mean_array
 
     means = posterior.mean(axis=0)
+    q05 = np.percentile(posterior, 5, axis=0)
     q16 = np.percentile(posterior, 16, axis=0)
     q50 = np.percentile(posterior, 50, axis=0)
     q84 = np.percentile(posterior, 84, axis=0)
+    q95 = np.percentile(posterior, 95, axis=0)
     n_params = len(parameter_names)
 
     figure_path = (
@@ -416,108 +542,199 @@ def main() -> None:
         figure_dir
         / f"test_singleframe_posterior_cobaya_mcmc_{TRAIN_DATA_VERSION}_{TEST_DATA_VERSION}_{model_tag}_pop{TEST_SAMPLE_INDEX:05d}_f{FRAME_INDEX:02d}.txt"
     )
-
-    fig, axes = plt.subplots(n_params, n_params, figsize=(3.2 * n_params, 3.2 * n_params))
-    if n_params == 1:
-        axes = np.asarray([[axes]])
-
-    for row in range(n_params):
-        for col in range(n_params):
-            ax = axes[row, col]
-            if row == col:
-                samples = posterior[:, col]
-                x_limits = _range_based_limits(
-                    samples,
-                    label_true[col],
-                    means[col],
-                    parameter_ranges.get(parameter_names[col]),
-                )
-                x_grid, y_grid = _safe_kde_1d(samples, x_limits)
-                if x_grid is not None:
-                    ax.plot(x_grid, y_grid, color="#4DAA57", linewidth=1.8)
-                else:
-                    ax.hist(samples, bins=40, density=True, color="#4DAA57", alpha=0.35)
-                ax.axvline(label_true[col], color="red", linestyle="--", linewidth=1.0)
-                ax.set_title(parameter_names[col])
-                ax.set_xlim(*x_limits)
-                ax.set_yticks([])
-                summary_text = (
-                    f"true={label_true[col]:.3f}\n"
-                    f"mean={means[col]:.3f}\n"
-                    f"{q50[col]:.3f}"
-                    f"^(+{(q84[col] - q50[col]):.3f})"
-                    f"_(-{(q50[col] - q16[col]):.3f})\n"
-                    f"68% CI"
-                )
-                ax.text(
-                    0.03,
-                    0.97,
-                    summary_text,
-                    transform=ax.transAxes,
-                    va="top",
-                    ha="left",
-                    fontsize=8.5,
-                    bbox={
-                        "boxstyle": "round,pad=0.25",
-                        "facecolor": "white",
-                        "edgecolor": "#BDBDBD",
-                        "alpha": 0.9,
-                    },
-                )
-            elif row > col:
-                x = posterior[:, col]
-                y = posterior[:, row]
-                x_limits = _range_based_limits(
-                    x,
-                    label_true[col],
-                    means[col],
-                    parameter_ranges.get(parameter_names[col]),
-                )
-                y_limits = _range_based_limits(
-                    y,
-                    label_true[row],
-                    means[row],
-                    parameter_ranges.get(parameter_names[row]),
-                )
-                xx, yy, zz = _safe_kde_2d(x, y, x_limits, y_limits)
-                if zz is not None:
-                    ax.contourf(xx, yy, zz, levels=14, cmap="Greens")
-                    level_68, level_95 = _credible_levels_from_density(zz, [0.68, 0.95])
-                    contour_levels = sorted(set([level_95, level_68]))
-                    ax.contour(
-                        xx,
-                        yy,
-                        zz,
-                        levels=contour_levels,
-                        colors=["#3F8F4A", "#1E5F2B"][: len(contour_levels)],
-                        linewidths=[1.0, 1.4][: len(contour_levels)],
-                    )
-                else:
-                    ax.scatter(x, y, s=4, alpha=0.15, color="#4DAA57")
-                ax.scatter(label_true[col], label_true[row], color="red", marker="x", s=60, linewidths=2)
-                ax.scatter(means[col], means[row], color="black", marker="o", s=18)
-                ax.set_xlim(*_expand_if_degenerate(*x_limits))
-                ax.set_ylim(*_expand_if_degenerate(*y_limits))
-            else:
-                ax.axis("off")
-
-            if row == n_params - 1 and col <= row:
-                ax.set_xlabel(parameter_names[col])
-            else:
-                ax.set_xticklabels([])
-            if col == 0 and row > 0:
-                ax.set_ylabel(parameter_names[row])
-            elif col == 0 and row == 0:
-                ax.set_ylabel("density")
-            elif col != 0 and row >= col:
-                ax.set_yticklabels([])
-
-    fig.suptitle(
-        f"Posterior Cobaya MCMC corner plot (single-frame test, train={TRAIN_DATA_VERSION}, test={TEST_DATA_VERSION}, frame={FRAME_INDEX})",
-        fontsize=14,
+    credible_errors_path = (
+        figure_dir
+        / f"test_singleframe_credible_errors_{TRAIN_DATA_VERSION}_{TEST_DATA_VERSION}_{model_tag}_pop{TEST_SAMPLE_INDEX:05d}_f{FRAME_INDEX:02d}.txt"
     )
-    fig.tight_layout()
-    fig.savefig(figure_path, dpi=180)
+    credible_error_lines = [
+        (
+            f"{'Parameter':<14}{'true_value':>14}{'median':>14}"
+            f"{'90% +error':>16}{'90% -error':>16}"
+            f"{'68% +error':>16}{'68% -error':>16}"
+        ),
+        "-" * 106,
+    ]
+    for i, name in enumerate(parameter_names):
+        credible_error_lines.append(
+            f"{name:<14}{label_true[i]:>14.6f}{q50[i]:>14.6f}"
+            f"{q95[i] - q50[i]:>16.6f}{q50[i] - q05[i]:>16.6f}"
+            f"{q84[i] - q50[i]:>16.6f}{q50[i] - q16[i]:>16.6f}"
+        )
+    credible_errors_text = "\n".join(credible_error_lines)
+    credible_errors_path.write_text(credible_errors_text, encoding="utf-8")
+
+    posterior_color = "#565A9E"
+    posterior_outer_color = "#9295C8"
+    posterior_fill_color = "#E7E6F3"
+    truth_color = "#C9795D"
+    parameter_limits = (
+        [
+            _adaptive_limits(posterior[:, i], label_true[i], means[i])
+            for i in range(n_params)
+        ]
+        if PLOT_POSTERIOR
+        else []
+    )
+
+    with plt.rc_context(
+        {
+            "font.family": "serif",
+            "figure.facecolor": "#FBFAFD",
+            "axes.facecolor": "#FFFFFF",
+            "axes.edgecolor": "#777780",
+            "axes.linewidth": 0.9,
+            "xtick.color": "#50505A",
+            "ytick.color": "#50505A",
+        }
+    ):
+        plot_grid_size = n_params if PLOT_POSTERIOR else 1
+        fig, axes = plt.subplots(
+            plot_grid_size,
+            plot_grid_size,
+            figsize=(2.15 * plot_grid_size, 2.15 * plot_grid_size),
+            squeeze=False,
+        )
+
+        for row in range(n_params if PLOT_POSTERIOR else 0):
+            for col in range(n_params):
+                ax = axes[row, col]
+                if row < col:
+                    ax.axis("off")
+                    continue
+
+                ax.spines["top"].set_visible(False)
+                ax.spines["right"].set_visible(False)
+                x_limits = parameter_limits[col]
+
+                if row == col:
+                    samples = posterior[:, col]
+                    x_grid, y_grid = _safe_kde_1d(samples, x_limits)
+                    if x_grid is not None:
+                        ax.fill_between(
+                            x_grid,
+                            0.0,
+                            y_grid,
+                            color=posterior_fill_color,
+                            alpha=0.75,
+                            linewidth=0.0,
+                        )
+                        ax.plot(x_grid, y_grid, color=posterior_color, linewidth=1.8)
+                    else:
+                        ax.hist(
+                            samples,
+                            bins=40,
+                            density=True,
+                            histtype="step",
+                            color=posterior_color,
+                            linewidth=1.5,
+                        )
+                    ax.axvline(
+                        label_true[col],
+                        color=truth_color,
+                        linestyle="--",
+                        linewidth=1.1,
+                        zorder=0,
+                    )
+                    ax.set_xlim(*x_limits)
+                    ax.set_yticks([])
+                else:
+                    x = posterior[:, col]
+                    y = posterior[:, row]
+                    y_limits = parameter_limits[row]
+                    xx, yy, zz = _safe_kde_2d(x, y, x_limits, y_limits)
+                    if zz is not None:
+                        level_68, level_95 = _credible_levels_from_density(zz, [0.68, 0.95])
+                        contour_levels = sorted(set([level_95, level_68]))
+                        if len(contour_levels) == 2 and float(np.max(zz)) > contour_levels[-1]:
+                            ax.contourf(
+                                xx,
+                                yy,
+                                zz,
+                                levels=[contour_levels[0], contour_levels[1], float(np.max(zz))],
+                                colors=[posterior_fill_color, "#D5D4E9"],
+                                alpha=0.72,
+                            )
+                        ax.contour(
+                            xx,
+                            yy,
+                            zz,
+                            levels=contour_levels,
+                            colors=[posterior_outer_color, posterior_color][
+                                : len(contour_levels)
+                            ],
+                            linewidths=[1.3, 1.8][: len(contour_levels)],
+                        )
+                    else:
+                        ax.scatter(x, y, s=3, alpha=0.12, color=posterior_color)
+
+                    ax.axvline(
+                        label_true[col],
+                        color=truth_color,
+                        linestyle="--",
+                        linewidth=0.9,
+                        zorder=0,
+                    )
+                    ax.axhline(
+                        label_true[row],
+                        color=truth_color,
+                        linestyle="--",
+                        linewidth=0.9,
+                        zorder=0,
+                    )
+                    ax.scatter(
+                        label_true[col],
+                        label_true[row],
+                        color=truth_color,
+                        marker="+",
+                        s=34,
+                        linewidths=1.2,
+                        zorder=3,
+                    )
+                    ax.set_xlim(*x_limits)
+                    ax.set_ylim(*y_limits)
+
+                if row == n_params - 1:
+                    ax.set_xlabel(parameter_names[col], fontsize=10)
+                else:
+                    ax.tick_params(axis="x", labelbottom=False)
+                if col == 0 and row > 0:
+                    ax.set_ylabel(parameter_names[row], fontsize=10)
+                elif col > 0:
+                    ax.tick_params(axis="y", labelleft=False)
+                ax.tick_params(labelsize=8, length=3)
+                ax.xaxis.set_major_locator(MaxNLocator(nbins=3, min_n_ticks=2))
+                if row > col:
+                    ax.yaxis.set_major_locator(MaxNLocator(nbins=3, min_n_ticks=2))
+
+        legend_handles = [
+            Line2D([0], [0], color=posterior_color, linewidth=2.0, label="Posterior"),
+            Line2D(
+                [0],
+                [0],
+                color=truth_color,
+                linestyle="--",
+                linewidth=1.2,
+                label="Truth",
+            ),
+        ]
+        if PLOT_POSTERIOR:
+            fig.legend(
+                handles=legend_handles,
+                loc="upper right",
+                bbox_to_anchor=(0.97, 0.97),
+                frameon=False,
+                fontsize=11,
+            )
+            fig.subplots_adjust(
+                left=0.07,
+                right=0.98,
+                bottom=0.07,
+                top=0.98,
+                wspace=0.08,
+                hspace=0.08,
+            )
+    if PLOT_POSTERIOR:
+        fig.savefig(figure_path, dpi=500)
     plt.close(fig)
 
     lines = [
@@ -533,6 +750,11 @@ def main() -> None:
         f"Proposal std (normalized space): {PROPOSAL_STD}",
         f"Rminus1_stop: {RMINUS1_STOP}",
         f"Rminus1_cl_stop: {RMINUS1_CL_STOP}",
+        f"Use posterior cache: {USE_POSTERIOR_CACHE}",
+        f"Loaded posterior cache: {loaded_posterior_cache}",
+        f"Posterior cache: {posterior_cache_path}",
+        f"Credible interval errors: {credible_errors_path}",
+        f"Plot posterior: {PLOT_POSTERIOR}",
         f"Chain prefix: {chain_prefix}",
         f"H1 file: {h1_path}",
         f"L1 file: {l1_path}",
@@ -544,10 +766,12 @@ def main() -> None:
     lines.append("")
     for i, name in enumerate(parameter_names):
         in68 = "Y" if q16[i] <= label_true[i] <= q84[i] else "N"
+        in90 = "Y" if q05[i] <= label_true[i] <= q95[i] else "N"
         lines.append(
             f"{name:<12} true={label_true[i]:.6f} median={q50[i]:.6f} "
             f"plus={q84[i]-q50[i]:.6f} minus={q50[i]-q16[i]:.6f} "
-            f"ci16={q16[i]:.6f} ci84={q84[i]:.6f} in68={in68}"
+            f"ci68_lower={q16[i]:.6f} ci68_upper={q84[i]:.6f} in68={in68} "
+            f"ci90_lower={q05[i]:.6f} ci90_upper={q95[i]:.6f} in90={in90}"
         )
     text = "\n".join(lines)
 
@@ -555,7 +779,11 @@ def main() -> None:
     if SAVE_TEXT_SUMMARY:
         metrics_path.write_text(text, encoding="utf-8")
         print(f"Saved metrics: {metrics_path}")
-    print(f"Saved figure: {figure_path}")
+    print(f"Saved credible interval errors: {credible_errors_path}")
+    if PLOT_POSTERIOR:
+        print(f"Saved figure: {figure_path}")
+    else:
+        print("Skipped posterior figure (PLOT_POSTERIOR=False)")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,13 @@
+Parameter names: ['zp', 'alpha_z', 'beta_z', 'alpha_m', 'delta_m', 'mu_m', 'sigma_m', 'beta_q']
+Evaluated test samples: 17000 / 59080
+Posterior samples per test sample: 800
+Regularization epsilon: 1e-06
+Progress file: /workspace/NN_SGWB/scripts/timeflow_v1_a/outputs_dataset_v100_random_two_noise_100/test_fig/test_set_mahalanobis_progress_v1_a.npz
+
+Mean Mahalanobis distance: 2.509275
+Std Mahalanobis distance: 0.625997
+Median Mahalanobis distance: 2.471382
+Min Mahalanobis distance: 0.633799
+Max Mahalanobis distance: 9.739561
+68th percentile: 2.755581
+95th percentile: 3.554135

@@ -1,9 +1,0 @@
-Sample index: 0
-Posterior samples: 2000
-Burn-in: 1000
-Proposal std (normalized space): 0.2
-Acceptance rate: 0.299333
-
-zp           true=2.683488 mean=1.011399 err=-1.672089 ci16=0.966394 ci84=1.058748 in68=N
-delta_m      true=8.111463 mean=8.579635 err=0.468172 ci16=7.471156 ci84=9.580570 in68=Y
-beta_q       true=2.096566 mean=-0.875687 err=-2.972254 ci16=-2.070086 ci84=0.194670 in68=N

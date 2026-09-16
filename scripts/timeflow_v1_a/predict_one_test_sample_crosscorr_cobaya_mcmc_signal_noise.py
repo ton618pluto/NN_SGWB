@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import re
+import sys
 from pathlib import Path
+
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
 import matplotlib.pyplot as plt
 import numpy as np
 from gwpy.timeseries import TimeSeries
+from scipy.optimize import minimize
 from scipy.signal import csd, welch
 
 from gwfast.gwfastGlobals import detectors as GWFAST_DETECTORS
@@ -20,37 +27,36 @@ from predict_one_test_sample_cobaya_mcmc import (
 )
 
 
-BASE_VERSION = "v71"
+BASE_VERSION = "v100"
 NOISE_SCALE = 100
-SIGNAL_VERSION = f"fixed_one_test_{BASE_VERSION}"
-SUPERIMPOSED_VERSION = f"{SIGNAL_VERSION}_random_two_noise_{NOISE_SCALE}"
+SIGNAL_VERSION = f"fixed_one_test_{BASE_VERSION}_random_two_noise_{NOISE_SCALE}"
+SUPERIMPOSED_VERSION = f"fixed_one_test_{BASE_VERSION}_random_two_noise_{NOISE_SCALE}"
 FOLDER_NAME = "training_set0"
 
 START_SAMPLE_INDEX = 0
 NUM_TEST_SAMPLES = 1
 SEED = 42
 MAX_SAMPLES = 8000
-PROPOSAL_STD_LOG10_OMEGA = 0.2
-PROPOSAL_STD_ALPHA = 0.15
+PROPOSAL_STD_LOG10_OMEGA = 0.005
+PROPOSAL_STD_ALPHA = 0.01
 RMINUS1_STOP = 0.03
 RMINUS1_CL_STOP = 0.2
 SAVE_TEXT_SUMMARY = False
 SAVE_COBAYA_CHAIN = False
 STRAIN_CHANNEL_SUFFIX = "TEST_INJ"
 
-FFT_LENGTH = 8.0
-OVERLAP = 4.0
+FFT_LENGTH = 32.0
+OVERLAP = 16.0
 WINDOW = "hann"
 FREQ_MIN = 20.0
 FREQ_MAX = 172.0
 F_REF = 25.0
 MIN_ORF_ABS = 1e-3
-EPS = 1e-30
+VARIANCE_FLOOR = np.finfo(np.float64).tiny
 
 LOG10_OMEGA_PRIOR = (-14.0, -5.0)
 ALPHA_PRIOR = (-4.0, 4.0)
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 VERSION_DIR = Path(__file__).resolve().parent
 RESULT_DIR = VERSION_DIR / "result_fig"
 SUPERIMPOSED_ROOT = SCRIPTS_DIR / "training_set_superimposed_test" / SUPERIMPOSED_VERSION
@@ -91,6 +97,13 @@ def load_series(path: Path, detector: str) -> TimeSeries:
     return TimeSeries.read(str(path), channel=channel)
 
 
+def extract_sample_key(path: Path) -> str:
+    match = re.search(r"(pop\d+_sample\d+)", path.name)
+    if match is None:
+        raise ValueError(f"Cannot extract pop/sample key from filename: {path.name}")
+    return match.group(1)
+
+
 def compute_num_averages(num_samples: int, nperseg: int, noverlap: int) -> int:
     step = nperseg - noverlap
     if step <= 0:
@@ -120,7 +133,7 @@ def prepare_crosscorr_summary(h1: np.ndarray, l1: np.ndarray, sample_rate: float
             GWFAST_DETECTORS["L1"],
             det1_name="H1",
             det2_name="L1",
-        )["H1_L1"]
+        )["H1-L1"]
     )
 
     freq_max = min(FREQ_MAX, sample_rate * 0.5 * 0.98)
@@ -135,7 +148,8 @@ def prepare_crosscorr_summary(h1: np.ndarray, l1: np.ndarray, sample_rate: float
     gamma = gamma[mask]
 
     num_avg = compute_num_averages(len(h1), nperseg, noverlap)
-    sigma = np.sqrt(np.maximum(psd_h1 * psd_l1 / (2.0 * num_avg), EPS))
+    variance = psd_h1 * psd_l1 / (2.0 * num_avg)
+    sigma = np.sqrt(np.maximum(variance, VARIANCE_FLOOR))
     return {
         "freqs": freqs.astype(np.float64),
         "psd_h1": psd_h1.astype(np.float64),
@@ -158,13 +172,79 @@ def model_cross_psd(freqs: np.ndarray, gamma: np.ndarray, log10_omega_ref: float
     return gamma * strain_psd
 
 
+def find_best_fit_and_proposals(
+    freqs: np.ndarray,
+    gamma: np.ndarray,
+    data: np.ndarray,
+    sigma: np.ndarray,
+    initial: tuple[float, float],
+) -> tuple[np.ndarray, np.ndarray]:
+    bounds = [LOG10_OMEGA_PRIOR, ALPHA_PRIOR]
+
+    def chi_squared(parameters: np.ndarray) -> float:
+        model = model_cross_psd(freqs, gamma, float(parameters[0]), float(parameters[1]))
+        residual = (data - model) / sigma
+        return float(np.sum(residual * residual))
+
+    starts = [
+        np.asarray(initial, dtype=np.float64),
+        np.asarray([-9.0, 2.0 / 3.0], dtype=np.float64),
+        np.asarray(
+            [
+                0.5 * (LOG10_OMEGA_PRIOR[0] + LOG10_OMEGA_PRIOR[1]),
+                0.5 * (ALPHA_PRIOR[0] + ALPHA_PRIOR[1]),
+            ],
+            dtype=np.float64,
+        ),
+    ]
+    results = [
+        minimize(chi_squared, np.clip(start, *zip(*bounds)), method="L-BFGS-B", bounds=bounds)
+        for start in starts
+    ]
+    finite_results = [result for result in results if np.isfinite(result.fun)]
+    if not finite_results:
+        raise RuntimeError("Could not find a finite cross-correlation best-fit point.")
+
+    best_result = min(finite_results, key=lambda result: result.fun)
+    best_fit = np.asarray(best_result.x, dtype=np.float64)
+
+    best_model = model_cross_psd(freqs, gamma, best_fit[0], best_fit[1])
+    derivatives = np.column_stack(
+        [
+            np.log(10.0) * best_model,
+            np.log(freqs / F_REF) * best_model,
+        ]
+    )
+    fisher_diagonal = np.sum((derivatives / sigma[:, None]) ** 2, axis=0)
+    fallback = np.asarray(
+        [PROPOSAL_STD_LOG10_OMEGA, PROPOSAL_STD_ALPHA],
+        dtype=np.float64,
+    )
+    conditional_widths = np.divide(
+        1.0,
+        np.sqrt(fisher_diagonal),
+        out=fallback.copy(),
+        where=np.isfinite(fisher_diagonal) & (fisher_diagonal > 0.0),
+    )
+    proposal_widths = np.minimum(conditional_widths, fallback)
+    proposal_widths = np.maximum(proposal_widths, np.asarray([1e-6, 1e-5]))
+    return best_fit, proposal_widths
+
+
 def fit_effective_powerlaw(freqs: np.ndarray, gamma: np.ndarray, cpsd_real: np.ndarray) -> tuple[float, float] | None:
-    valid = (cpsd_real > 0.0) & (np.abs(gamma) >= MIN_ORF_ABS)
+    usable_gamma = np.abs(gamma) >= MIN_ORF_ABS
+    signal_strain_psd = np.full_like(cpsd_real, np.nan, dtype=np.float64)
+    np.divide(cpsd_real, gamma, out=signal_strain_psd, where=usable_gamma)
+    valid = usable_gamma & np.isfinite(signal_strain_psd) & (signal_strain_psd > 0.0)
     if np.count_nonzero(valid) < 4:
         return None
 
     x = np.log(freqs[valid] / F_REF)
-    y = np.log(cpsd_real[valid] / (np.abs(gamma[valid]) * STRAIN_PREFAC) * np.maximum(freqs[valid], 1e-12) ** 3)
+    y = np.log(
+        signal_strain_psd[valid]
+        * np.maximum(freqs[valid], 1e-12) ** 3
+        / STRAIN_PREFAC
+    )
     slope, intercept = np.polyfit(x, y, deg=1)
     return float(intercept / np.log(10.0)), float(slope)
 
@@ -314,15 +394,36 @@ def main() -> None:
         h1_noise_path, l1_noise_path = superimposed_pairs[sample_index]
         h1_signal_path, l1_signal_path = signal_pairs[sample_index]
 
+        sample_keys = {
+            "H1 superimposed": extract_sample_key(h1_noise_path),
+            "L1 superimposed": extract_sample_key(l1_noise_path),
+            "H1 signal-only": extract_sample_key(h1_signal_path),
+            "L1 signal-only": extract_sample_key(l1_signal_path),
+        }
+        if len(set(sample_keys.values())) != 1:
+            raise ValueError(f"GWF sample mismatch for index {sample_index}: {sample_keys}")
+
         h1_noise = load_series(h1_noise_path, "H1")
         l1_noise = load_series(l1_noise_path, "L1")
         h1_signal = load_series(h1_signal_path, "H1")
         l1_signal = load_series(l1_signal_path, "L1")
 
-        if len(h1_noise) != len(l1_noise):
-            raise ValueError(f"Superimposed H1/L1 length mismatch for sample {sample_index}")
-        if h1_noise.sample_rate.value != l1_noise.sample_rate.value:
-            raise ValueError(f"Superimposed H1/L1 sample rate mismatch for sample {sample_index}")
+        series_map = {
+            "H1 superimposed": h1_noise,
+            "L1 superimposed": l1_noise,
+            "H1 signal-only": h1_signal,
+            "L1 signal-only": l1_signal,
+        }
+        lengths = {name: len(series) for name, series in series_map.items()}
+        if len(set(lengths.values())) != 1:
+            raise ValueError(f"GWF length mismatch for sample {sample_index}: {lengths}")
+
+        sample_rates = {
+            name: float(series.sample_rate.value)
+            for name, series in series_map.items()
+        }
+        if len(set(sample_rates.values())) != 1:
+            raise ValueError(f"GWF sample-rate mismatch for sample {sample_index}: {sample_rates}")
 
         sample_rate = float(h1_noise.sample_rate.value)
         summary = prepare_crosscorr_summary(
@@ -330,31 +431,23 @@ def main() -> None:
             np.asarray(l1_noise.value, dtype=np.float64),
             sample_rate,
         )
-        signal_summary = prepare_crosscorr_summary(
-            np.asarray(h1_signal.value, dtype=np.float64),
-            np.asarray(l1_signal.value, dtype=np.float64),
-            sample_rate,
-        )
-
-        effective_truth = fit_effective_powerlaw(
-            np.asarray(signal_summary["freqs"], dtype=np.float64),
-            np.asarray(signal_summary["gamma"], dtype=np.float64),
-            np.asarray(signal_summary["cpsd_real"], dtype=np.float64),
-        )
+        freqs = np.asarray(summary["freqs"], dtype=np.float64)
+        gamma = np.asarray(summary["gamma"], dtype=np.float64)
+        data = np.asarray(summary["cpsd_real"], dtype=np.float64)
+        sigma = np.asarray(summary["sigma"], dtype=np.float64)
 
         def crosscorr_loglike(log10_omega_ref: float, alpha: float) -> float:
-            freqs = np.asarray(summary["freqs"], dtype=np.float64)
-            gamma = np.asarray(summary["gamma"], dtype=np.float64)
-            data = np.asarray(summary["cpsd_real"], dtype=np.float64)
-            sigma = np.asarray(summary["sigma"], dtype=np.float64)
             model = model_cross_psd(freqs, gamma, log10_omega_ref, alpha)
             resid = (data - model) / sigma
             return float(-0.5 * np.sum(resid * resid + np.log(2.0 * np.pi * sigma * sigma)))
 
-        ref_log10_omega = -9.0
-        ref_alpha = 2.0 / 3.0
-        if effective_truth is not None:
-            ref_log10_omega, ref_alpha = effective_truth
+        best_fit, proposal_widths = find_best_fit_and_proposals(
+            freqs,
+            gamma,
+            data,
+            sigma,
+            (-9.0, 2.0 / 3.0),
+        )
 
         info = {
             "force": True,
@@ -362,13 +455,13 @@ def main() -> None:
             "params": {
                 "log10_omega_ref": {
                     "prior": {"min": LOG10_OMEGA_PRIOR[0], "max": LOG10_OMEGA_PRIOR[1]},
-                    "ref": float(np.clip(ref_log10_omega, *LOG10_OMEGA_PRIOR)),
-                    "proposal": PROPOSAL_STD_LOG10_OMEGA,
+                    "ref": float(best_fit[0]),
+                    "proposal": float(proposal_widths[0]),
                 },
                 "alpha": {
                     "prior": {"min": ALPHA_PRIOR[0], "max": ALPHA_PRIOR[1]},
-                    "ref": float(np.clip(ref_alpha, *ALPHA_PRIOR)),
-                    "proposal": PROPOSAL_STD_ALPHA,
+                    "ref": float(best_fit[1]),
+                    "proposal": float(proposal_widths[1]),
                 },
             },
             "likelihood": {
@@ -395,13 +488,39 @@ def main() -> None:
         print(f"Superimposed L1: {l1_noise_path}")
         print(f"Signal-only H1:   {h1_signal_path}")
         print(f"Signal-only L1:   {l1_signal_path}")
-        print(f"Effective signal-only fit: {effective_truth}")
+        print(f"Signal+noise best fit: ({best_fit[0]}, {best_fit[1]})")
+        print(f"Initial proposal widths: ({proposal_widths[0]}, {proposal_widths[1]})")
         print(f"Frequency bins used: {len(np.asarray(summary['freqs']))}")
         print(f"Welch averages used: {summary['num_avg']}")
 
         _, sampler = cobaya_run(info, force=True)
         posterior = _collection_to_array(sampler.products()["sample"], parameter_names)
-        reference_values = None if effective_truth is None else np.asarray(effective_truth, dtype=np.float64)
+
+        # The signal-only data are used only after inference for evaluation and plotting.
+        signal_summary = prepare_crosscorr_summary(
+            np.asarray(h1_signal.value, dtype=np.float64),
+            np.asarray(l1_signal.value, dtype=np.float64),
+            sample_rate,
+        )
+        signal_freqs = np.asarray(signal_summary["freqs"], dtype=np.float64)
+        signal_gamma = np.asarray(signal_summary["gamma"], dtype=np.float64)
+        signal_data = np.asarray(signal_summary["cpsd_real"], dtype=np.float64)
+        if not np.array_equal(freqs, signal_freqs) or not np.allclose(gamma, signal_gamma):
+            raise ValueError(f"Signal and superimposed frequency grids differ for sample {sample_index}")
+
+        initial_signal_fit = fit_effective_powerlaw(signal_freqs, signal_gamma, signal_data)
+        signal_initial = (-9.0, 2.0 / 3.0) if initial_signal_fit is None else initial_signal_fit
+        signal_best_fit, _ = find_best_fit_and_proposals(
+            signal_freqs,
+            signal_gamma,
+            signal_data,
+            sigma,
+            signal_initial,
+        )
+        effective_truth = (float(signal_best_fit[0]), float(signal_best_fit[1]))
+        reference_values = np.asarray(effective_truth, dtype=np.float64)
+        print(f"Initial signal-only log-space fit: {initial_signal_fit}")
+        print(f"Weighted signal-only best fit: {effective_truth}")
 
         corner_path = RESULT_DIR / f"crosscorr_signal_noise_corner_{BASE_VERSION}_{sample_index:05d}.png"
         means, q16, q50, q84 = draw_corner_plot(

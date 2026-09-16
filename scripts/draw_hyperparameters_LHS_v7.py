@@ -115,9 +115,13 @@ def save_joint_hyperparameters(output_path, n_samples=100, seed=42):
 
 
 if __name__ == "__main__":
-    n_samples = 200000
+#    n_samples = 200000
+    n_samples = 300000
     seed = 42
-    version = "v70"
+#    version = "v70"
+#    version = "v71"
+    version = "v100"
+#    version = "v100_test_2"
     output_path = Path(__file__).parent / "joint_hyperparams_train" / version / f"joint_hyperparams_train_{version}.npz"
 
     saved_path = save_joint_hyperparameters(output_path, n_samples=n_samples, seed=seed)

@@ -6,6 +6,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from matplotlib.lines import Line2D
+from matplotlib.ticker import MaxNLocator
 from scipy.stats import gaussian_kde
 
 from dataset import GWDatasetV1A, PARAMETER_SPECS
@@ -24,31 +26,33 @@ except ImportError:
     cobaya_run = None
 
 
-BASE_VERSION = "v61"
+#BASE_VERSION = "v61"
 #BASE_VERSION = "v64"
 #BASE_VERSION = "v80"
 #BASE_VERSION = "v81"
 #BASE_VERSION = "v70"
 #BASE_VERSION = "v71"
 #BASE_VERSION = "v100"
+#BASE_VERSION = "v61_random_two_noise_100"
+BASE_VERSION = "v100_random_two_noise_100"
 TRAIN_DATA_VERSION = BASE_VERSION
 
 #input_folder="processed_data_test" # this will be changed,processed_data_test is "signal",processed_data_test_superimposed is "signal+noise"
 input_folder="processed_data_test_superimposed" # this will be changed,processed_data_test is "signal",processed_data_test_superimposed is "signal+noise"
 
-TEST_DATA_VERSION = f"fixed_one_test_{BASE_VERSION}_fixed_noise"
-#TEST_DATA_VERSION = f"fixed_one_test_{BASE_VERSION}"
+#TEST_DATA_VERSION = f"fixed_one_test_{BASE_VERSION}_fixed_noise"
+TEST_DATA_VERSION = f"fixed_one_test_{BASE_VERSION}"
 
 USE_MODEL2 = False
 TEST_SAMPLE_INDEX = 0
-#NUM_FRAMES = 10   # can be changed
-NUM_FRAMES = 4   # can be changed
-#NUM_FRAMES = 1
-GPU_INDEX = 1
 SEED = 42
+# Select sample00000, then sample00009, sample00019, ..., sample00099.
+FRAME_SAMPLE_INDICES = [0, 9,19,29,39,49,59,79,89,99]
+NUM_FRAMES = len(FRAME_SAMPLE_INDICES)
+FRAME_SPLIT_INDEX = 0
+GPU_INDEX = 1
 #MAX_SAMPLES = 8000
 MAX_SAMPLES = 20000
-NORMALIZED_PRIOR_ABS_MAX = 8.0
 #PROPOSAL_STD = 0.15
 #PROPOSAL_STD = 0.10
 PROPOSAL_STD = 0.08
@@ -56,6 +60,11 @@ RMINUS1_STOP = 0.03
 RMINUS1_CL_STOP = 0.2
 SAVE_TEXT_SUMMARY = False
 SAVE_COBAYA_CHAIN = False
+AUTO_RESUME_COBAYA_CHAIN = False
+FORCE_NEW_COBAYA_CHAIN = False
+USE_POSTERIOR_CACHE = True
+REBUILD_POSTERIOR_CACHE = False
+PRINT_FRAME_DELTA_DIAGNOSTICS = True
 #USE_INPUT_SCALE = True
 USE_INPUT_SCALE = False
 INPUT_SCALE = 1e23
@@ -67,7 +76,7 @@ DATA_VERSION_RANGE_OVERRIDES = {
     "v21": {
         "alpha_m": (-3.0, 7.0),
         "delta_m": (0.0, 10.0),
-        "mu_m": (25.0, 100.0),
+        "mu_m": (25.0, 50.0),
         "sigma_m": (0.01, 5.0),
         "zp": (1.85, 2.9),
         "alpha_z": (2.7, 2.7),
@@ -221,6 +230,42 @@ def _collection_to_array(collection, parameter_names: list[str]) -> np.ndarray:
     raise RuntimeError("Unable to convert Cobaya sample collection to numpy array.")
 
 
+def _save_posterior_cache(
+    cache_path: Path,
+    posterior_norm: np.ndarray,
+    metadata: dict[str, object],
+) -> None:
+    temporary_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
+    with temporary_path.open("wb") as handle:
+        np.savez_compressed(
+            handle,
+            posterior_norm=np.asarray(posterior_norm, dtype=np.float64),
+            metadata_json=np.asarray(json.dumps(metadata, sort_keys=True)),
+        )
+    temporary_path.replace(cache_path)
+
+
+def _load_posterior_cache(
+    cache_path: Path,
+    expected_metadata: dict[str, object],
+    expected_parameter_count: int,
+) -> np.ndarray:
+    with np.load(cache_path, allow_pickle=False) as saved:
+        posterior_norm = np.asarray(saved["posterior_norm"], dtype=np.float64)
+        saved_metadata_json = str(saved["metadata_json"].item())
+
+    if saved_metadata_json != json.dumps(expected_metadata, sort_keys=True):
+        raise ValueError("posterior cache metadata does not match the current run")
+    if (
+        posterior_norm.ndim != 2
+        or posterior_norm.shape[0] == 0
+        or posterior_norm.shape[1] != expected_parameter_count
+        or not np.all(np.isfinite(posterior_norm))
+    ):
+        raise ValueError(f"invalid cached posterior shape or values: {posterior_norm.shape}")
+    return posterior_norm
+
+
 def _build_output_dir() -> Path:
     output_name = f"outputs_dataset_{TRAIN_DATA_VERSION}"
     if USE_MODEL2:
@@ -265,7 +310,8 @@ def _label_to_full_hyperparameters(label) -> dict[str, float]:
 def _load_multi_frame_data(
     processed_test_version: str,
     test_sample_index: int,
-    num_frames: int,
+    frame_sample_indices: list[int],
+    frame_split_index: int,
     feature_mean: np.ndarray,
     feature_std: np.ndarray,
     label_mean: np.ndarray,
@@ -279,15 +325,26 @@ def _load_multi_frame_data(
     if not l1_dir.exists():
         raise FileNotFoundError(f"L1 split directory not found: {l1_dir}")
 
-#    prefix = f"H1-pop{test_sample_index:05d}_"
-    prefix = f"H1-SUPERIMPOSED-pop{test_sample_index:05d}_"
-    h1_files = sorted(path for path in h1_dir.glob(f"{prefix}*.npy"))
-    if len(h1_files) < num_frames:
-        raise ValueError(
-            f"Requested {num_frames} frames for pop{test_sample_index:05d}, "
-            f"but only found {len(h1_files)} H1 files in {h1_dir}"
+    if not frame_sample_indices:
+        raise ValueError("FRAME_SAMPLE_INDICES must contain at least one sample index.")
+    if len(set(frame_sample_indices)) != len(frame_sample_indices):
+        raise ValueError(f"FRAME_SAMPLE_INDICES contains duplicates: {frame_sample_indices}")
+    if any(index < 0 for index in frame_sample_indices):
+        raise ValueError(f"FRAME_SAMPLE_INDICES must be non-negative: {frame_sample_indices}")
+    if frame_split_index < 0:
+        raise ValueError(f"FRAME_SPLIT_INDEX must be non-negative: {frame_split_index}")
+
+    h1_files = [
+        h1_dir
+        / (
+            f"H1-SUPERIMPOSED-pop{test_sample_index:05d}_"
+            f"sample{sample_index:05d}_p{frame_split_index}.npy"
         )
-    h1_files = h1_files[:num_frames]
+        for sample_index in frame_sample_indices
+    ]
+    missing_h1 = [path for path in h1_files if not path.exists()]
+    if missing_h1:
+        raise FileNotFoundError(f"Missing selected H1 files: {missing_h1}")
     l1_files = [l1_dir / path.name.replace("H1-", "L1-", 1) for path in h1_files]
     missing_l1 = [path for path in l1_files if not path.exists()]
     if missing_l1:
@@ -335,9 +392,6 @@ label_std_array_runtime: np.ndarray
 def main() -> None:
     global PARAMETER_NAMES_RUNTIME, label_mean_array_runtime, label_std_array_runtime
 
-    if cobaya_run is None:
-        raise ImportError("Cobaya is not installed. Please install `cobaya` before running this script.")
-
     np.random.seed(SEED)
     torch.manual_seed(SEED)
 
@@ -352,10 +406,34 @@ def main() -> None:
     feature_mean = np.asarray(run_config["feature_mean"], dtype=np.float32)
     feature_std = np.asarray(run_config["feature_std"], dtype=np.float32)
 
+    normalized_prior_bounds: dict[str, tuple[float, float]] = {}
+    for i, parameter_name in enumerate(PARAMETER_NAMES_RUNTIME):
+        physical_bounds = parameter_ranges.get(parameter_name)
+        if physical_bounds is None:
+            raise ValueError(f"Missing training range for parameter: {parameter_name}")
+        label_std = float(label_std_array_runtime[i])
+        if not np.isfinite(label_std) or label_std <= 0.0:
+            raise ValueError(
+                f"Invalid label std for parameter {parameter_name}: {label_std}"
+            )
+        physical_min, physical_max = map(float, physical_bounds)
+        normalized_min = (physical_min - label_mean_array_runtime[i]) / label_std
+        normalized_max = (physical_max - label_mean_array_runtime[i]) / label_std
+        if not normalized_min < normalized_max:
+            raise ValueError(
+                f"Invalid training range for parameter {parameter_name}: "
+                f"{physical_bounds}"
+            )
+        normalized_prior_bounds[parameter_name] = (
+            float(normalized_min),
+            float(normalized_max),
+        )
+
     data, label_true_norm, full_hyperparameters, h1_files, l1_files = _load_multi_frame_data(
         processed_test_version=TEST_DATA_VERSION,
         test_sample_index=TEST_SAMPLE_INDEX,
-        num_frames=NUM_FRAMES,
+        frame_sample_indices=FRAME_SAMPLE_INDICES,
+        frame_split_index=FRAME_SPLIT_INDEX,
         feature_mean=feature_mean,
         feature_std=feature_std,
         label_mean=label_mean_array_runtime,
@@ -367,52 +445,177 @@ def main() -> None:
     figure_dir = Path(__file__).resolve().parent / "result_fig"
     figure_dir.mkdir(parents=True, exist_ok=True)
     model_tag = "a_model2" if USE_MODEL2 else "a"
+    frame_selection_tag = f"spaced0_9to99_n{NUM_FRAMES}"
+    run_tag = (
+        f"multiframe_{TRAIN_DATA_VERSION}_{TEST_DATA_VERSION}_{model_tag}_"
+        f"pop{TEST_SAMPLE_INDEX:05d}_{frame_selection_tag}_"
+        f"p{FRAME_SPLIT_INDEX}_trainprior"
+    )
+    run_result_dir = figure_dir / run_tag
+    run_result_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Run outputs directory: {run_result_dir}")
+
+    # The observed frames stay fixed throughout MCMC. Encoding them inside
+    # flow_target_logp would rerun the CNN for every proposal, so cache the
+    # context once and only evaluate the much cheaper conditional flow below.
+    with torch.inference_mode():
+        frame_context = model.encode(data)
+    num_likelihood_frames = frame_context.shape[0]
+    print(
+        "Precomputed fixed frame context: "
+        f"{tuple(frame_context.shape)} for {num_likelihood_frames} frames."
+    )
 
     def flow_target_logp(**params):
-        theta_norm = np.asarray([params[name] for name in norm_parameter_names], dtype=np.float32)
-        theta_batch = np.repeat(theta_norm[None, :], repeats=data.shape[0], axis=0)
-        theta = torch.tensor(theta_batch, dtype=torch.float32, device=device)
-        with torch.no_grad():
-            log_probs = model.log_prob(theta, data)
+        theta = torch.as_tensor(
+            [[params[name] for name in norm_parameter_names]],
+            dtype=torch.float32,
+            device=device,
+        ).expand(num_likelihood_frames, -1)
+        with torch.inference_mode():
+            log_probs = model.flow.log_prob(inputs=theta, context=frame_context)
             return float(log_probs.sum().item())
 
     params_info = {}
-    for i, norm_name in enumerate(norm_parameter_names):
+    for i, (parameter_name, norm_name) in enumerate(
+        zip(PARAMETER_NAMES_RUNTIME, norm_parameter_names)
+    ):
+        prior_min, prior_max = normalized_prior_bounds[parameter_name]
+        if not prior_min <= label_true_norm[i] <= prior_max:
+            raise ValueError(
+                f"True value for {parameter_name} is outside its training prior: "
+                f"normalized truth={label_true_norm[i]:.6g}, "
+                f"bounds=[{prior_min:.6g}, {prior_max:.6g}]"
+            )
         params_info[norm_name] = {
-            "prior": {"min": -NORMALIZED_PRIOR_ABS_MAX, "max": NORMALIZED_PRIOR_ABS_MAX},
+            "prior": {"min": prior_min, "max": prior_max},
             "ref": float(label_true_norm[i]),
             "proposal": PROPOSAL_STD,
         }
 
-    chain_prefix = str(
-        figure_dir
-        / f"cobaya_chain_multiframe_{TRAIN_DATA_VERSION}_{TEST_DATA_VERSION}_{model_tag}_pop{TEST_SAMPLE_INDEX:05d}_n{NUM_FRAMES}"
-    )
-    info = {
-        "force": True,
-        "resume": False,
-        "params": params_info,
-        "likelihood": {
-            "flow_posterior_multi_frame": {
-                "external": flow_target_logp,
-                "input_params": norm_parameter_names,
-            }
-        },
-        "sampler": {
-            "mcmc": {
-                "max_samples": MAX_SAMPLES,
-                "learn_proposal": True,
-                "Rminus1_stop": RMINUS1_STOP,
-                "Rminus1_cl_stop": RMINUS1_CL_STOP,
-                "measure_speeds": False,
-            }
-        },
-    }
-    if SAVE_COBAYA_CHAIN:
-        info["output"] = chain_prefix
+    print("Normalized training-prior bounds:")
+    for parameter_name in PARAMETER_NAMES_RUNTIME:
+        prior_min, prior_max = normalized_prior_bounds[parameter_name]
+        print(f"  {parameter_name}: [{prior_min:.6f}, {prior_max:.6f}]")
 
-    _, sampler = cobaya_run(info, force=True)
-    posterior_norm = _collection_to_array(sampler.products()["sample"], norm_parameter_names)
+    chain_prefix_path = run_result_dir / "cobaya_chain"
+    chain_prefix = str(chain_prefix_path)
+    posterior_cache_path = run_result_dir / "posterior_samples_norm.npz"
+    checkpoint_name = "best_flow_v1_a_model2.pt" if USE_MODEL2 else "best_flow_v1_a.pt"
+    checkpoint_path = _build_output_dir() / checkpoint_name
+    checkpoint_stat = checkpoint_path.stat()
+    input_file_signatures = [
+        {
+            "name": str(path),
+            "size": path.stat().st_size,
+            "mtime_ns": path.stat().st_mtime_ns,
+        }
+        for path in [*h1_files, *l1_files]
+    ]
+    posterior_cache_metadata = {
+        "format_version": 1,
+        "train_data_version": TRAIN_DATA_VERSION,
+        "test_data_version": TEST_DATA_VERSION,
+        "input_folder": input_folder,
+        "model_variant": run_config.get("model_variant", "model1"),
+        "checkpoint_name": checkpoint_name,
+        "checkpoint_size": checkpoint_stat.st_size,
+        "checkpoint_mtime_ns": checkpoint_stat.st_mtime_ns,
+        "test_sample_index": TEST_SAMPLE_INDEX,
+        "frame_sample_indices": list(FRAME_SAMPLE_INDICES),
+        "frame_split_index": FRAME_SPLIT_INDEX,
+        "input_files": input_file_signatures,
+        "parameter_names": list(PARAMETER_NAMES_RUNTIME),
+        "label_mean": label_mean_array_runtime.tolist(),
+        "label_std": label_std_array_runtime.tolist(),
+        "feature_mean": feature_mean.astype(np.float64).tolist(),
+        "feature_std": feature_std.astype(np.float64).tolist(),
+        "normalized_prior_bounds": normalized_prior_bounds,
+        "max_samples": MAX_SAMPLES,
+        "proposal_std": PROPOSAL_STD,
+        "rminus1_stop": RMINUS1_STOP,
+        "rminus1_cl_stop": RMINUS1_CL_STOP,
+        "seed": SEED,
+    }
+
+    posterior_norm = None
+    loaded_posterior_cache = False
+    resume_chain = False
+    if USE_POSTERIOR_CACHE and posterior_cache_path.exists() and not REBUILD_POSTERIOR_CACHE:
+        try:
+            posterior_norm = _load_posterior_cache(
+                posterior_cache_path,
+                posterior_cache_metadata,
+                len(PARAMETER_NAMES_RUNTIME),
+            )
+            loaded_posterior_cache = True
+            print(
+                f"Loaded posterior cache: {posterior_cache_path} "
+                f"({posterior_norm.shape[0]} samples); skipping Cobaya sampling."
+            )
+        except Exception as exc:
+            print(f"Ignoring incompatible posterior cache {posterior_cache_path}: {exc}")
+
+    if posterior_norm is None:
+        if cobaya_run is None:
+            raise ImportError(
+                "Cobaya is not installed and no compatible posterior cache is available. "
+                "Please install `cobaya` before sampling."
+            )
+
+        existing_chain_files = sorted(
+            chain_prefix_path.parent.glob(f"{chain_prefix_path.name}.*")
+        )
+        resume_chain = bool(
+            SAVE_COBAYA_CHAIN
+            and AUTO_RESUME_COBAYA_CHAIN
+            and existing_chain_files
+            and not FORCE_NEW_COBAYA_CHAIN
+        )
+        force_chain = bool(SAVE_COBAYA_CHAIN and FORCE_NEW_COBAYA_CHAIN)
+
+        if resume_chain:
+            print(f"Resuming Cobaya chain from prefix: {chain_prefix}")
+        elif force_chain and existing_chain_files:
+            print(f"FORCE_NEW_COBAYA_CHAIN=True: overwriting chain prefix: {chain_prefix}")
+        elif SAVE_COBAYA_CHAIN:
+            print(f"Starting a new Cobaya chain with prefix: {chain_prefix}")
+
+        info = {
+            "force": force_chain,
+            "resume": resume_chain,
+            "params": params_info,
+            "likelihood": {
+                "flow_posterior_multi_frame": {
+                    "external": flow_target_logp,
+                    "input_params": norm_parameter_names,
+                }
+            },
+            "sampler": {
+                "mcmc": {
+                    "max_samples": MAX_SAMPLES,
+                    "learn_proposal": True,
+                    "Rminus1_stop": RMINUS1_STOP,
+                    "Rminus1_cl_stop": RMINUS1_CL_STOP,
+                    "measure_speeds": False,
+                }
+            },
+        }
+        if SAVE_COBAYA_CHAIN:
+            info["output"] = chain_prefix
+
+        _, sampler = cobaya_run(info)
+        posterior_norm = _collection_to_array(
+            sampler.products()["sample"], norm_parameter_names
+        )
+        if USE_POSTERIOR_CACHE:
+            _save_posterior_cache(
+                posterior_cache_path,
+                posterior_norm,
+                posterior_cache_metadata,
+            )
+            print(f"Saved posterior cache before plotting: {posterior_cache_path}")
+
     posterior = posterior_norm * label_std_array_runtime + label_mean_array_runtime
 
     means = posterior.mean(axis=0)
@@ -421,116 +624,228 @@ def main() -> None:
     q84 = np.percentile(posterior, 84, axis=0)
     n_params = len(PARAMETER_NAMES_RUNTIME)
 
+    if PRINT_FRAME_DELTA_DIAGNOSTICS:
+        joint_median_norm = np.percentile(posterior_norm, 50, axis=0)
+        theta_true_batch = torch.as_tensor(
+            label_true_norm,
+            dtype=torch.float32,
+            device=device,
+        ).unsqueeze(0).expand(num_likelihood_frames, -1)
+        theta_joint_batch = torch.as_tensor(
+            joint_median_norm,
+            dtype=torch.float32,
+            device=device,
+        ).unsqueeze(0).expand(num_likelihood_frames, -1)
+
+        with torch.inference_mode():
+            frame_logp_true = model.flow.log_prob(
+                inputs=theta_true_batch,
+                context=frame_context,
+            )
+            frame_logp_joint = model.flow.log_prob(
+                inputs=theta_joint_batch,
+                context=frame_context,
+            )
+
+        frame_logp_true_np = frame_logp_true.detach().cpu().numpy()
+        frame_logp_joint_np = frame_logp_joint.detach().cpu().numpy()
+        frame_deltas = frame_logp_joint_np - frame_logp_true_np
+
+        print("\nPer-frame log-probability preference diagnostics:")
+        print("  delta_i = log q(theta_joint | frame_i) - log q(theta_true | frame_i)")
+        print("  delta_i > 0 favors the joint posterior median; delta_i < 0 favors truth.")
+        for frame_index, (h1_path, logp_true_i, logp_joint_i, delta_i) in enumerate(
+            zip(h1_files, frame_logp_true_np, frame_logp_joint_np, frame_deltas),
+            start=1,
+        ):
+            print(
+                f"  frame={frame_index:03d} file={h1_path.name} "
+                f"logp_true={logp_true_i:.6f} "
+                f"logp_joint={logp_joint_i:.6f} delta={delta_i:+.6f}"
+            )
+
+        finite_deltas = frame_deltas[np.isfinite(frame_deltas)]
+        if finite_deltas.size == 0:
+            print("Frame delta summary: no finite delta values.")
+        else:
+            print("Frame delta summary:")
+            print(f"  positive_count: {np.count_nonzero(finite_deltas > 0)}")
+            print(f"  negative_count: {np.count_nonzero(finite_deltas < 0)}")
+            print(f"  zero_count: {np.count_nonzero(finite_deltas == 0)}")
+            print(f"  nonfinite_count: {frame_deltas.size - finite_deltas.size}")
+            print(f"  mean_delta: {finite_deltas.mean():+.6f}")
+            print(f"  median_delta: {np.median(finite_deltas):+.6f}")
+            print(f"  total_delta: {finite_deltas.sum():+.6f}")
+            print(f"  min_delta: {finite_deltas.min():+.6f}")
+            print(f"  max_delta: {finite_deltas.max():+.6f}")
+
     figure_path = (
-        figure_dir
+        run_result_dir
         / f"test_multiframe_posterior_cobaya_mcmc_{TRAIN_DATA_VERSION}_{TEST_DATA_VERSION}_{model_tag}_pop{TEST_SAMPLE_INDEX:05d}_n{NUM_FRAMES}.png"
     )
     metrics_path = (
-        figure_dir
+        run_result_dir
         / f"test_multiframe_posterior_cobaya_mcmc_{TRAIN_DATA_VERSION}_{TEST_DATA_VERSION}_{model_tag}_pop{TEST_SAMPLE_INDEX:05d}_n{NUM_FRAMES}.txt"
     )
 
-    fig, axes = plt.subplots(n_params, n_params, figsize=(3.2 * n_params, 3.2 * n_params))
-    if n_params == 1:
-        axes = np.asarray([[axes]])
+    posterior_color = "#565A9E"
+    posterior_outer_color = "#9295C8"
+    posterior_fill_color = "#E7E6F3"
+    truth_color = "#C9795D"
+    parameter_limits = [
+        _adaptive_limits(posterior[:, i], label_true[i], means[i])
+        for i in range(n_params)
+    ]
 
-    for row in range(n_params):
-        for col in range(n_params):
-            ax = axes[row, col]
-            if row == col:
-                samples = posterior[:, col]
-                x_limits = _range_based_limits(
-                    samples,
-                    label_true[col],
-                    means[col],
-                    parameter_ranges.get(PARAMETER_NAMES_RUNTIME[col]),
-                )
-                x_grid, y_grid = _safe_kde_1d(samples, x_limits)
-                if x_grid is not None:
-                    ax.plot(x_grid, y_grid, color="#4DAA57", linewidth=1.8)
-                else:
-                    ax.hist(samples, bins=40, density=True, color="#4DAA57", alpha=0.35)
-                ax.axvline(label_true[col], color="red", linestyle="--", linewidth=1.0)
-                ax.set_title(PARAMETER_NAMES_RUNTIME[col])
-                ax.set_xlim(*x_limits)
-                ax.set_yticks([])
-                summary_text = (
-                    f"true={label_true[col]:.3f}\n"
-                    f"mean={means[col]:.3f}\n"
-                    f"{q50[col]:.3f}"
-                    f"^(+{(q84[col] - q50[col]):.3f})"
-                    f"_(-{(q50[col] - q16[col]):.3f})\n"
-                    f"68% CI"
-                )
-                ax.text(
-                    0.03,
-                    0.97,
-                    summary_text,
-                    transform=ax.transAxes,
-                    va="top",
-                    ha="left",
-                    fontsize=8.5,
-                    bbox={
-                        "boxstyle": "round,pad=0.25",
-                        "facecolor": "white",
-                        "edgecolor": "#BDBDBD",
-                        "alpha": 0.9,
-                    },
-                )
-            elif row > col:
-                x = posterior[:, col]
-                y = posterior[:, row]
-                x_limits = _range_based_limits(
-                    x,
-                    label_true[col],
-                    means[col],
-                    parameter_ranges.get(PARAMETER_NAMES_RUNTIME[col]),
-                )
-                y_limits = _range_based_limits(
-                    y,
-                    label_true[row],
-                    means[row],
-                    parameter_ranges.get(PARAMETER_NAMES_RUNTIME[row]),
-                )
-                xx, yy, zz = _safe_kde_2d(x, y, x_limits, y_limits)
-                if zz is not None:
-                    ax.contourf(xx, yy, zz, levels=14, cmap="Greens")
-                    level_68, level_95 = _credible_levels_from_density(zz, [0.68, 0.95])
-                    contour_levels = sorted(set([level_95, level_68]))
-                    ax.contour(
-                        xx,
-                        yy,
-                        zz,
-                        levels=contour_levels,
-                        colors=["#3F8F4A", "#1E5F2B"][: len(contour_levels)],
-                        linewidths=[1.0, 1.4][: len(contour_levels)],
+    with plt.rc_context(
+        {
+            "font.family": "serif",
+            "figure.facecolor": "#FBFAFD",
+            "axes.facecolor": "#FFFFFF",
+            "axes.edgecolor": "#777780",
+            "axes.linewidth": 0.9,
+            "xtick.color": "#50505A",
+            "ytick.color": "#50505A",
+        }
+    ):
+        fig, axes = plt.subplots(
+            n_params,
+            n_params,
+            figsize=(2.15 * n_params, 2.15 * n_params),
+            squeeze=False,
+        )
+
+        for row in range(n_params):
+            for col in range(n_params):
+                ax = axes[row, col]
+                if row < col:
+                    ax.axis("off")
+                    continue
+
+                ax.spines["top"].set_visible(False)
+                ax.spines["right"].set_visible(False)
+                x_limits = parameter_limits[col]
+
+                if row == col:
+                    samples = posterior[:, col]
+                    x_grid, y_grid = _safe_kde_1d(samples, x_limits)
+                    if x_grid is not None:
+                        ax.fill_between(
+                            x_grid,
+                            0.0,
+                            y_grid,
+                            color=posterior_fill_color,
+                            alpha=0.75,
+                            linewidth=0.0,
+                        )
+                        ax.plot(x_grid, y_grid, color=posterior_color, linewidth=1.8)
+                    else:
+                        ax.hist(
+                            samples,
+                            bins=40,
+                            density=True,
+                            histtype="step",
+                            color=posterior_color,
+                            linewidth=1.5,
+                        )
+                    ax.axvline(
+                        label_true[col],
+                        color=truth_color,
+                        linestyle="--",
+                        linewidth=1.1,
+                        zorder=0,
                     )
+                    ax.set_xlim(*x_limits)
+                    ax.set_yticks([])
                 else:
-                    ax.scatter(x, y, s=4, alpha=0.15, color="#4DAA57")
-                ax.scatter(label_true[col], label_true[row], color="red", marker="x", s=60, linewidths=2)
-                ax.scatter(means[col], means[row], color="black", marker="o", s=18)
-                ax.set_xlim(*_expand_if_degenerate(*x_limits))
-                ax.set_ylim(*_expand_if_degenerate(*y_limits))
-            else:
-                ax.axis("off")
+                    x = posterior[:, col]
+                    y = posterior[:, row]
+                    y_limits = parameter_limits[row]
+                    xx, yy, zz = _safe_kde_2d(x, y, x_limits, y_limits)
+                    if zz is not None:
+                        level_68, level_95 = _credible_levels_from_density(zz, [0.68, 0.95])
+                        contour_levels = sorted(set([level_95, level_68]))
+                        if len(contour_levels) == 2 and float(np.max(zz)) > contour_levels[-1]:
+                            ax.contourf(
+                                xx,
+                                yy,
+                                zz,
+                                levels=[contour_levels[0], contour_levels[1], float(np.max(zz))],
+                                colors=[posterior_fill_color, "#D5D4E9"],
+                                alpha=0.72,
+                            )
+                        ax.contour(
+                            xx,
+                            yy,
+                            zz,
+                            levels=contour_levels,
+                            colors=[posterior_outer_color, posterior_color][
+                                : len(contour_levels)
+                            ],
+                            linewidths=[1.3, 1.8][: len(contour_levels)],
+                        )
+                    else:
+                        ax.scatter(x, y, s=3, alpha=0.12, color=posterior_color)
 
-            if row == n_params - 1 and col <= row:
-                ax.set_xlabel(PARAMETER_NAMES_RUNTIME[col])
-            else:
-                ax.set_xticklabels([])
-            if col == 0 and row > 0:
-                ax.set_ylabel(PARAMETER_NAMES_RUNTIME[row])
-            elif col == 0 and row == 0:
-                ax.set_ylabel("density")
-            elif col != 0 and row >= col:
-                ax.set_yticklabels([])
+                    ax.axvline(
+                        label_true[col],
+                        color=truth_color,
+                        linestyle="--",
+                        linewidth=0.9,
+                        zorder=0,
+                    )
+                    ax.axhline(
+                        label_true[row],
+                        color=truth_color,
+                        linestyle="--",
+                        linewidth=0.9,
+                        zorder=0,
+                    )
+                    ax.scatter(
+                        label_true[col],
+                        label_true[row],
+                        color=truth_color,
+                        marker="+",
+                        s=34,
+                        linewidths=1.2,
+                        zorder=3,
+                    )
+                    ax.set_xlim(*x_limits)
+                    ax.set_ylim(*y_limits)
 
-    fig.suptitle(
-        f"Posterior Cobaya MCMC corner plot (multi-frame test, train={TRAIN_DATA_VERSION}, test={TEST_DATA_VERSION}, n={NUM_FRAMES})",
-        fontsize=14,
-    )
-    fig.tight_layout()
-    fig.savefig(figure_path, dpi=180)
+                if row == n_params - 1:
+                    ax.set_xlabel(PARAMETER_NAMES_RUNTIME[col], fontsize=10)
+                else:
+                    ax.tick_params(axis="x", labelbottom=False)
+                if col == 0 and row > 0:
+                    ax.set_ylabel(PARAMETER_NAMES_RUNTIME[row], fontsize=10)
+                elif col > 0:
+                    ax.tick_params(axis="y", labelleft=False)
+                ax.tick_params(labelsize=8, length=3)
+                ax.xaxis.set_major_locator(MaxNLocator(nbins=3, min_n_ticks=2))
+                if row > col:
+                    ax.yaxis.set_major_locator(MaxNLocator(nbins=3, min_n_ticks=2))
+
+        legend_handles = [
+            Line2D([0], [0], color=posterior_color, linewidth=2.0, label="Posterior"),
+            Line2D(
+                [0],
+                [0],
+                color=truth_color,
+                linestyle="--",
+                linewidth=1.2,
+                label="Truth",
+            ),
+        ]
+        fig.legend(
+            handles=legend_handles,
+            loc="upper right",
+            bbox_to_anchor=(0.97, 0.97),
+            frameon=False,
+            fontsize=11,
+        )
+        fig.subplots_adjust(left=0.07, right=0.98, bottom=0.07, top=0.98, wspace=0.08, hspace=0.08)
+    fig.savefig(figure_path, dpi=500)
     plt.close(fig)
 
     lines = [
@@ -538,14 +853,28 @@ def main() -> None:
         f"Test data version: {TEST_DATA_VERSION}",
         f"Model variant: {'model2' if USE_MODEL2 else 'model1'}",
         f"Test sample index (pop index): {TEST_SAMPLE_INDEX}",
+        f"Frame sample indices: {FRAME_SAMPLE_INDICES}",
+        f"Frame split index: {FRAME_SPLIT_INDEX}",
         f"Number of frames: {NUM_FRAMES}",
         "Sampler: cobaya mcmc",
         "Target distribution: joint pure flow posterior over multiple frames",
         f"Max samples: {MAX_SAMPLES}",
-        f"Normalized prior range: [-{NORMALIZED_PRIOR_ABS_MAX}, {NORMALIZED_PRIOR_ABS_MAX}]",
+        "Prior: per-parameter training ranges transformed to normalized space",
+        "Normalized training-prior bounds:",
+        *[
+            f"  {name}: [{normalized_prior_bounds[name][0]:.8f}, "
+            f"{normalized_prior_bounds[name][1]:.8f}]"
+            for name in PARAMETER_NAMES_RUNTIME
+        ],
         f"Proposal std (normalized space): {PROPOSAL_STD}",
         f"Rminus1_stop: {RMINUS1_STOP}",
         f"Rminus1_cl_stop: {RMINUS1_CL_STOP}",
+        f"Use posterior cache: {USE_POSTERIOR_CACHE}",
+        f"Loaded posterior cache: {loaded_posterior_cache}",
+        f"Posterior cache: {posterior_cache_path}",
+        f"Save Cobaya chain: {SAVE_COBAYA_CHAIN}",
+        f"Auto-resume Cobaya chain: {AUTO_RESUME_COBAYA_CHAIN}",
+        f"Resumed existing chain: {resume_chain}",
         f"Chain prefix: {chain_prefix}",
         "H1 files:",
         *[f"  {path}" for path in h1_files],
