@@ -28,7 +28,7 @@ DURATION_SECONDS = 2048.0
 NOISE_SCALE = 1.0
 
 FIGURE_SIZE_INCHES = (10.0, 4.8)
-OUTPUT_DPI = 500
+OUTPUT_DPI = 600
 
 # A 2048 s, 512 Hz frame contains more than one million points. The plotting
 # downsampler preserves the minimum and maximum in each time block, so sharp
@@ -58,7 +58,7 @@ CHANNEL = "H1:TEST_INJ"
 
 OUTPUT_DIR = SCRIPTS_DIR / "paper_figures"
 OUTPUT_PATH = OUTPUT_DIR / (
-    f"H1_signal_noise_{VERSION}_0_{int(DURATION_SECONDS)}s.png"
+    f"H1_signal_noise_{VERSION}_0_{int(DURATION_SECONDS)}s.pdf"
 )
 
 
@@ -247,7 +247,7 @@ def main() -> None:
         f"window_samples={noise.size}, plotted_points={noise_plot.size}, "
         f"scale={NOISE_SCALE:g}"
     )
-    print(f"Saved 500-dpi figure: {OUTPUT_PATH}")
+    print(f"Saved PDF figure (rasterized traces at {OUTPUT_DPI} dpi): {OUTPUT_PATH}")
 
 
 if __name__ == "__main__":

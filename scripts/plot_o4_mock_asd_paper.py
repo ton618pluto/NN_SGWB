@@ -12,13 +12,13 @@ FREQUENCY_MIN_HZ = 10.0
 FREQUENCY_MAX_HZ: float | None = None  # None keeps the full frequency range.
 
 FIGURE_SIZE_INCHES = (7.4, 4.8)
-OUTPUT_DPI = 500
+OUTPUT_DPI = 600
 CURVE_COLOR = "#59689A"
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 ASD_PATH = SCRIPTS_DIR / "O4_mock.txt"
 OUTPUT_DIR = SCRIPTS_DIR / "paper_figures"
-OUTPUT_PATH = OUTPUT_DIR / "O4_mock_ASD.png"
+OUTPUT_PATH = OUTPUT_DIR / "O4_mock_ASD.pdf"
 
 
 def load_asd(path: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -116,7 +116,7 @@ def main() -> None:
     print(f"Plotted points: {frequency.size}")
     print(f"Frequency range: {frequency.min():.6g}-{frequency.max():.6g} Hz")
     print(f"ASD range: {asd.min():.6e}-{asd.max():.6e} Hz^(-1/2)")
-    print(f"Saved 500-dpi figure: {OUTPUT_PATH}")
+    print(f"Saved vector PDF figure ({OUTPUT_DPI} dpi for raster elements): {OUTPUT_PATH}")
 
 
 if __name__ == "__main__":

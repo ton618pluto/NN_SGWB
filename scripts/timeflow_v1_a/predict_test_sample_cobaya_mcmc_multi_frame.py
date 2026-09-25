@@ -129,8 +129,10 @@ def _adaptive_limits(
     mean_value: float,
     q_low: float = 0.5,
     q_high: float = 99.5,
-    pad_frac: float = 0.08,
+    pad_frac: float = 0.15,
 ) -> tuple[float, float]:
+    # Keep adaptive axes while leaving enough room for the 95% contour and
+    # the tails of the one-dimensional KDE curves.
     lo = float(np.percentile(samples, q_low))
     hi = float(np.percentile(samples, q_high))
     lo = min(lo, float(true_value), float(mean_value))
@@ -681,7 +683,7 @@ def main() -> None:
 
     figure_path = (
         run_result_dir
-        / f"test_multiframe_posterior_cobaya_mcmc_{TRAIN_DATA_VERSION}_{TEST_DATA_VERSION}_{model_tag}_pop{TEST_SAMPLE_INDEX:05d}_n{NUM_FRAMES}.png"
+        / f"test_multiframe_posterior_cobaya_mcmc_{TRAIN_DATA_VERSION}_{TEST_DATA_VERSION}_{model_tag}_pop{TEST_SAMPLE_INDEX:05d}_n{NUM_FRAMES}.pdf"
     )
     metrics_path = (
         run_result_dir
@@ -690,7 +692,6 @@ def main() -> None:
 
     posterior_color = "#565A9E"
     posterior_outer_color = "#9295C8"
-    posterior_fill_color = "#E7E6F3"
     truth_color = "#C9795D"
     parameter_limits = [
         _adaptive_limits(posterior[:, i], label_true[i], means[i])
@@ -730,14 +731,6 @@ def main() -> None:
                     samples = posterior[:, col]
                     x_grid, y_grid = _safe_kde_1d(samples, x_limits)
                     if x_grid is not None:
-                        ax.fill_between(
-                            x_grid,
-                            0.0,
-                            y_grid,
-                            color=posterior_fill_color,
-                            alpha=0.75,
-                            linewidth=0.0,
-                        )
                         ax.plot(x_grid, y_grid, color=posterior_color, linewidth=1.8)
                     else:
                         ax.hist(
@@ -765,15 +758,6 @@ def main() -> None:
                     if zz is not None:
                         level_68, level_95 = _credible_levels_from_density(zz, [0.68, 0.95])
                         contour_levels = sorted(set([level_95, level_68]))
-                        if len(contour_levels) == 2 and float(np.max(zz)) > contour_levels[-1]:
-                            ax.contourf(
-                                xx,
-                                yy,
-                                zz,
-                                levels=[contour_levels[0], contour_levels[1], float(np.max(zz))],
-                                colors=[posterior_fill_color, "#D5D4E9"],
-                                alpha=0.72,
-                            )
                         ax.contour(
                             xx,
                             yy,
@@ -845,7 +829,7 @@ def main() -> None:
             fontsize=11,
         )
         fig.subplots_adjust(left=0.07, right=0.98, bottom=0.07, top=0.98, wspace=0.08, hspace=0.08)
-    fig.savefig(figure_path, dpi=500)
+    fig.savefig(figure_path, dpi=800)
     plt.close(fig)
 
     lines = [

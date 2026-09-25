@@ -52,7 +52,7 @@ def sample_joint_hyperparameters_separate(n_samples=10000, seed=None):
     lhs_unit = latin_hypercube_unit(n_samples=n_samples, n_dims=8, seed=seed)
 
     zp = scale_unit_to_range(lhs_unit[:, 0], 0.85, 2.85)
-    alpha_z = scale_unit_to_range(lhs_unit[:, 1], 1.0, 5.0)
+    alpha_z = scale_unit_to_range(lhs_unit[:, 1], 1.0, 3.0)
     beta_z = scale_unit_to_range(lhs_unit[:, 2], 1.0, 5.0)
 
     alpha_m = scale_unit_to_range(lhs_unit[:, 3], -3.0, 7.0)
