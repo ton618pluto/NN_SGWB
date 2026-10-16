@@ -1,0 +1,34 @@
+Strict IID simulation-based calibration rank diagnostics
+==========================================================
+Model data version: v100_random_two_noise_100
+Parameter design: independent draws from the exact uniform prior
+Observation design: one independently simulated H1/L1 record per theta
+Conditioned on non-empty CBC population: True
+Evaluated IID populations: 1000
+Posterior samples per population: 999
+Possible ranks: 0-999
+Rank histogram bins: 20
+Expected count per bin: 50.000000
+99% pointwise count envelope: [32.247322, 67.752678]
+Hyperparameter seed: see generated metadata
+Posterior seed base: 4000000
+Progress file: /workspace/NN_SGWB/scripts/strict_iid_sbc_v100/outputs/strict_iid_sbc_progress_v1_a.npz
+
+Per-parameter uniform-rank summaries:
+parameter                chi2      chi2/dof     min_count     max_count     max_rel_dev
+---------------------------------------------------------------------------------------
+zp                  12.360000      0.650526            40            60        0.200000
+alpha_z             23.160000      1.218947            38            67        0.340000
+beta_z              37.000000      1.947368            35            67        0.340000
+alpha_m             45.120000      2.374737            31            73        0.460000
+delta_m             21.160000      1.113684            33            62        0.340000
+mu_m               128.560000      6.766316            26           105        1.100000
+sigma_m             12.080000      0.635789            36            61        0.280000
+beta_q              26.560000      1.397895            37            64        0.280000
+
+Interpretation guide:
+  Flat ranks: globally calibrated marginal posterior.
+  U-shaped ranks: posterior is typically too narrow (overconfident).
+  Centre-heavy ranks: posterior is typically too wide (underconfident).
+  Monotonic slope: systematic posterior-location bias.
+  Marginal rank uniformity is not proof of complete joint calibration.

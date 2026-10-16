@@ -15,21 +15,26 @@ from utils import *  # noqa: F401,F403
 
 SECONDS_PER_YEAR = 365.25 * 24 * 3600
 FRAME_DURATION_SECONDS = 2048
-Z_MAX = 10.0
+Z_MAX = 10.0  # max of z range,10 or 20,v100 is 10
 
 # version = "fixed_one_test_v61"
 # version = "fixed_one_test_v64"
 # version = "fixed_one_test_v80"
 # version = "fixed_one_test_v70"
 # version = "fixed_one_test_v71"
-version = "fixed_one_test_v100"
+version = "fixed_one_test_v100_random_two_noise_100"
 output_path = f"./parameter_sampling_test/{version}"
 data_hyper = np.load(f"./joint_hyperparams_test/{version}/joint_hyperparams_test_{version}.npz")
 start = 0
 hyper_number = 1
-num_frames = 1
+#num_frames = 1
+num_frames = 10
+#num_frames = 100 # this will be changed
+#num_frames = 1000 # this will be changed
 max_attempts = 200
-REFERENCE_TRAIN_FILE_INDEX = 3  # this will be changed, control randomness
+REFERENCE_TRAIN_FILE_INDEX = 400000  # this will be changed, control randomness
+#REFERENCE_TRAIN_FILE_INDEX = 3  # this will be changed, control randomness
+#REFERENCE_TRAIN_FILE_INDEX = 0  # this will be changed, control randomness
 
 
 @jit

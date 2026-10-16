@@ -1,0 +1,45 @@
+{
+  "sampling": "independent uniform draws; not Latin hypercube sampling",
+  "num_samples": 1000,
+  "seed": 20260925,
+  "inferred_parameter_ranges": {
+    "zp": [
+      0.85,
+      2.85
+    ],
+    "alpha_z": [
+      1.0,
+      3.0
+    ],
+    "beta_z": [
+      1.0,
+      5.0
+    ],
+    "alpha_m": [
+      -3.0,
+      7.0
+    ],
+    "delta_m": [
+      0.0,
+      10.0
+    ],
+    "mu_m": [
+      25.0,
+      50.0
+    ],
+    "sigma_m": [
+      0.01,
+      5.0
+    ],
+    "beta_q": [
+      -5.0,
+      5.0
+    ]
+  },
+  "fixed_parameters": {
+    "m_max": 100.0,
+    "m_min": 2.0,
+    "lambda_peak": 0.04
+  },
+  "output": "D:\\pyProjects\\LIGO_SGWB\\scripts\\strict_iid_sbc_v100\\outputs\\iid_hyperparameters_v100.npz"
+}

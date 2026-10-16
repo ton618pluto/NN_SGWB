@@ -102,6 +102,20 @@ FULL_PARAMETER_NAMES = (
     "beta_q",
 )
 
+PARAMETER_PLOT_LABELS = {
+    "zp": r"$z_p$",
+    "alpha_z": r"$\alpha_z$",
+    "beta_z": r"$\beta_z$",
+    "alpha_m": r"$\alpha_m$",
+    "m_max": r"$m_{\mathrm{max}}$",
+    "delta_m": r"$\delta_m$",
+    "m_min": r"$m_{\mathrm{min}}$",
+    "lambda_peak": r"$\lambda_{\mathrm{peak}}$",
+    "mu_m": r"$\mu_m$",
+    "sigma_m": r"$\sigma_m$",
+    "beta_q": r"$\beta_q$",
+}
+
 
 def get_parameter_ranges(
     data_version: str | None,
@@ -236,12 +250,26 @@ def _save_posterior_cache(
     cache_path: Path,
     posterior_norm: np.ndarray,
     metadata: dict[str, object],
+    label_true: np.ndarray,
+    label_true_norm: np.ndarray,
+    full_hyperparameters: dict[str, float],
+    frame_context: np.ndarray,
+    h1_files: list[Path],
+    l1_files: list[Path],
 ) -> None:
     temporary_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
     with temporary_path.open("wb") as handle:
         np.savez_compressed(
             handle,
             posterior_norm=np.asarray(posterior_norm, dtype=np.float64),
+            label_true=np.asarray(label_true, dtype=np.float64),
+            label_true_norm=np.asarray(label_true_norm, dtype=np.float64),
+            frame_context=np.asarray(frame_context, dtype=np.float32),
+            full_hyperparameters_json=np.asarray(
+                json.dumps(full_hyperparameters, sort_keys=True)
+            ),
+            h1_files_json=np.asarray(json.dumps([str(path) for path in h1_files])),
+            l1_files_json=np.asarray(json.dumps([str(path) for path in l1_files])),
             metadata_json=np.asarray(json.dumps(metadata, sort_keys=True)),
         )
     temporary_path.replace(cache_path)
@@ -251,13 +279,55 @@ def _load_posterior_cache(
     cache_path: Path,
     expected_metadata: dict[str, object],
     expected_parameter_count: int,
-) -> np.ndarray:
+) -> tuple[
+    np.ndarray,
+    np.ndarray | None,
+    np.ndarray | None,
+    dict[str, float] | None,
+    np.ndarray | None,
+    list[Path] | None,
+    list[Path] | None,
+    dict[str, object],
+]:
     with np.load(cache_path, allow_pickle=False) as saved:
         posterior_norm = np.asarray(saved["posterior_norm"], dtype=np.float64)
         saved_metadata_json = str(saved["metadata_json"].item())
+        cached_state_fields = {
+            "label_true",
+            "label_true_norm",
+            "full_hyperparameters_json",
+            "frame_context",
+            "h1_files_json",
+            "l1_files_json",
+        }
+        if cached_state_fields.issubset(set(saved.files)):
+            label_true = np.asarray(saved["label_true"], dtype=np.float64)
+            label_true_norm = np.asarray(saved["label_true_norm"], dtype=np.float64)
+            frame_context = np.asarray(saved["frame_context"], dtype=np.float32)
+            full_hyperparameters = {
+                str(name): float(value)
+                for name, value in json.loads(
+                    str(saved["full_hyperparameters_json"].item())
+                ).items()
+            }
+            h1_files = [Path(path) for path in json.loads(str(saved["h1_files_json"].item()))]
+            l1_files = [Path(path) for path in json.loads(str(saved["l1_files_json"].item()))]
+        else:
+            label_true = None
+            label_true_norm = None
+            full_hyperparameters = None
+            frame_context = None
+            h1_files = None
+            l1_files = None
 
-    if saved_metadata_json != json.dumps(expected_metadata, sort_keys=True):
-        raise ValueError("posterior cache metadata does not match the current run")
+    saved_metadata = json.loads(saved_metadata_json)
+    for key, expected_value in expected_metadata.items():
+        if json.dumps(saved_metadata.get(key), sort_keys=True) != json.dumps(
+            expected_value, sort_keys=True
+        ):
+            raise ValueError(
+                f"posterior cache metadata field {key!r} does not match the current run"
+            )
     if (
         posterior_norm.ndim != 2
         or posterior_norm.shape[0] == 0
@@ -265,7 +335,30 @@ def _load_posterior_cache(
         or not np.all(np.isfinite(posterior_norm))
     ):
         raise ValueError(f"invalid cached posterior shape or values: {posterior_norm.shape}")
-    return posterior_norm
+    if label_true is not None:
+        if (
+            label_true.shape != (expected_parameter_count,)
+            or label_true_norm.shape != (expected_parameter_count,)
+            or not np.all(np.isfinite(label_true))
+            or not np.all(np.isfinite(label_true_norm))
+            or set(full_hyperparameters) != set(FULL_PARAMETER_NAMES)
+            or frame_context.ndim != 2
+            or frame_context.shape[0] != len(FRAME_SAMPLE_INDICES)
+            or not np.all(np.isfinite(frame_context))
+            or len(h1_files) != len(FRAME_SAMPLE_INDICES)
+            or len(l1_files) != len(FRAME_SAMPLE_INDICES)
+        ):
+            raise ValueError("invalid cached true values or frame context")
+    return (
+        posterior_norm,
+        label_true,
+        label_true_norm,
+        full_hyperparameters,
+        frame_context,
+        h1_files,
+        l1_files,
+        saved_metadata,
+    )
 
 
 def _build_output_dir() -> Path:
@@ -431,19 +524,6 @@ def main() -> None:
             float(normalized_max),
         )
 
-    data, label_true_norm, full_hyperparameters, h1_files, l1_files = _load_multi_frame_data(
-        processed_test_version=TEST_DATA_VERSION,
-        test_sample_index=TEST_SAMPLE_INDEX,
-        frame_sample_indices=FRAME_SAMPLE_INDICES,
-        frame_split_index=FRAME_SPLIT_INDEX,
-        feature_mean=feature_mean,
-        feature_std=feature_std,
-        label_mean=label_mean_array_runtime,
-        label_std=label_std_array_runtime,
-    )
-    data = data.to(device)
-    label_true = label_true_norm * label_std_array_runtime + label_mean_array_runtime
-
     figure_dir = Path(__file__).resolve().parent / "result_fig"
     figure_dir.mkdir(parents=True, exist_ok=True)
     model_tag = "a_model2" if USE_MODEL2 else "a"
@@ -457,16 +537,144 @@ def main() -> None:
     run_result_dir.mkdir(parents=True, exist_ok=True)
     print(f"Run outputs directory: {run_result_dir}")
 
-    # The observed frames stay fixed throughout MCMC. Encoding them inside
-    # flow_target_logp would rerun the CNN for every proposal, so cache the
-    # context once and only evaluate the much cheaper conditional flow below.
-    with torch.inference_mode():
-        frame_context = model.encode(data)
+    chain_prefix_path = run_result_dir / "cobaya_chain"
+    chain_prefix = str(chain_prefix_path)
+    posterior_cache_path = run_result_dir / "posterior_samples_norm.npz"
+    checkpoint_name = "best_flow_v1_a_model2.pt" if USE_MODEL2 else "best_flow_v1_a.pt"
+    checkpoint_path = _build_output_dir() / checkpoint_name
+    checkpoint_stat = checkpoint_path.stat()
+    expected_cache_metadata = {
+        "format_version": 1,
+        "train_data_version": TRAIN_DATA_VERSION,
+        "test_data_version": TEST_DATA_VERSION,
+        "input_folder": input_folder,
+        "model_variant": run_config.get("model_variant", "model1"),
+        "checkpoint_name": checkpoint_name,
+        "checkpoint_size": checkpoint_stat.st_size,
+        "checkpoint_mtime_ns": checkpoint_stat.st_mtime_ns,
+        "test_sample_index": TEST_SAMPLE_INDEX,
+        "frame_sample_indices": list(FRAME_SAMPLE_INDICES),
+        "frame_split_index": FRAME_SPLIT_INDEX,
+        "parameter_names": list(PARAMETER_NAMES_RUNTIME),
+        "label_mean": label_mean_array_runtime.tolist(),
+        "label_std": label_std_array_runtime.tolist(),
+        "feature_mean": feature_mean.astype(np.float64).tolist(),
+        "feature_std": feature_std.astype(np.float64).tolist(),
+        "normalized_prior_bounds": normalized_prior_bounds,
+        "max_samples": MAX_SAMPLES,
+        "proposal_std": PROPOSAL_STD,
+        "rminus1_stop": RMINUS1_STOP,
+        "rminus1_cl_stop": RMINUS1_CL_STOP,
+        "seed": SEED,
+    }
+
+    posterior_norm = None
+    label_true = None
+    label_true_norm = None
+    full_hyperparameters = None
+    frame_context_array = None
+    h1_files = None
+    l1_files = None
+    saved_cache_metadata = None
+    cache_had_complete_state = False
+    loaded_posterior_cache = False
+    resume_chain = False
+    if USE_POSTERIOR_CACHE and posterior_cache_path.exists() and not REBUILD_POSTERIOR_CACHE:
+        try:
+            (
+                posterior_norm,
+                label_true,
+                label_true_norm,
+                full_hyperparameters,
+                frame_context_array,
+                h1_files,
+                l1_files,
+                saved_cache_metadata,
+            ) = _load_posterior_cache(
+                posterior_cache_path,
+                expected_cache_metadata,
+                len(PARAMETER_NAMES_RUNTIME),
+            )
+            loaded_posterior_cache = True
+            cache_had_complete_state = label_true is not None
+            print(
+                f"Loaded posterior cache: {posterior_cache_path} "
+                f"({posterior_norm.shape[0]} samples); skipping Cobaya sampling."
+            )
+            if cache_had_complete_state:
+                print(
+                    "Loaded true parameter values and frame context from cache; "
+                    "skipping H1/L1 data loading."
+                )
+            else:
+                print(
+                    "Cached true values or frame context are missing; "
+                    "loading the input files once."
+                )
+        except Exception as exc:
+            print(f"Ignoring incompatible posterior cache {posterior_cache_path}: {exc}")
+
+    data = None
+    if not cache_had_complete_state:
+        data, label_true_norm, full_hyperparameters, h1_files, l1_files = _load_multi_frame_data(
+            processed_test_version=TEST_DATA_VERSION,
+            test_sample_index=TEST_SAMPLE_INDEX,
+            frame_sample_indices=FRAME_SAMPLE_INDICES,
+            frame_split_index=FRAME_SPLIT_INDEX,
+            feature_mean=feature_mean,
+            feature_std=feature_std,
+            label_mean=label_mean_array_runtime,
+            label_std=label_std_array_runtime,
+        )
+        data = data.to(device)
+        label_true = label_true_norm * label_std_array_runtime + label_mean_array_runtime
+
+        # The observed frames stay fixed throughout MCMC. Encoding them inside
+        # flow_target_logp would rerun the CNN for every proposal, so cache the
+        # context once and only evaluate the cheaper conditional flow below.
+        with torch.inference_mode():
+            frame_context = model.encode(data)
+        frame_context_array = frame_context.detach().cpu().numpy().astype(np.float32)
+        print(
+            "Precomputed fixed frame context: "
+            f"{tuple(frame_context.shape)} for {frame_context.shape[0]} frames."
+        )
+    else:
+        frame_context = torch.from_numpy(frame_context_array).to(device=device)
+        print(
+            "Restored fixed frame context from cache: "
+            f"{tuple(frame_context.shape)} for {frame_context.shape[0]} frames."
+        )
+
+    input_file_signatures = []
+    if all(path.exists() for path in [*h1_files, *l1_files]):
+        input_file_signatures = [
+            {
+                "name": str(path),
+                "size": path.stat().st_size,
+                "mtime_ns": path.stat().st_mtime_ns,
+            }
+            for path in [*h1_files, *l1_files]
+        ]
+    posterior_cache_metadata = dict(expected_cache_metadata)
+    posterior_cache_metadata["input_files"] = input_file_signatures
+    if cache_had_complete_state and saved_cache_metadata is not None:
+        posterior_cache_metadata = saved_cache_metadata
+    elif loaded_posterior_cache:
+        _save_posterior_cache(
+            posterior_cache_path,
+            posterior_norm,
+            posterior_cache_metadata,
+            label_true,
+            label_true_norm,
+            full_hyperparameters,
+            frame_context_array,
+            h1_files,
+            l1_files,
+        )
+        print(f"Upgraded posterior cache with true values and frame context: {posterior_cache_path}")
+
     num_likelihood_frames = frame_context.shape[0]
-    print(
-        "Precomputed fixed frame context: "
-        f"{tuple(frame_context.shape)} for {num_likelihood_frames} frames."
-    )
 
     def flow_target_logp(**params):
         theta = torch.as_tensor(
@@ -499,64 +707,6 @@ def main() -> None:
     for parameter_name in PARAMETER_NAMES_RUNTIME:
         prior_min, prior_max = normalized_prior_bounds[parameter_name]
         print(f"  {parameter_name}: [{prior_min:.6f}, {prior_max:.6f}]")
-
-    chain_prefix_path = run_result_dir / "cobaya_chain"
-    chain_prefix = str(chain_prefix_path)
-    posterior_cache_path = run_result_dir / "posterior_samples_norm.npz"
-    checkpoint_name = "best_flow_v1_a_model2.pt" if USE_MODEL2 else "best_flow_v1_a.pt"
-    checkpoint_path = _build_output_dir() / checkpoint_name
-    checkpoint_stat = checkpoint_path.stat()
-    input_file_signatures = [
-        {
-            "name": str(path),
-            "size": path.stat().st_size,
-            "mtime_ns": path.stat().st_mtime_ns,
-        }
-        for path in [*h1_files, *l1_files]
-    ]
-    posterior_cache_metadata = {
-        "format_version": 1,
-        "train_data_version": TRAIN_DATA_VERSION,
-        "test_data_version": TEST_DATA_VERSION,
-        "input_folder": input_folder,
-        "model_variant": run_config.get("model_variant", "model1"),
-        "checkpoint_name": checkpoint_name,
-        "checkpoint_size": checkpoint_stat.st_size,
-        "checkpoint_mtime_ns": checkpoint_stat.st_mtime_ns,
-        "test_sample_index": TEST_SAMPLE_INDEX,
-        "frame_sample_indices": list(FRAME_SAMPLE_INDICES),
-        "frame_split_index": FRAME_SPLIT_INDEX,
-        "input_files": input_file_signatures,
-        "parameter_names": list(PARAMETER_NAMES_RUNTIME),
-        "label_mean": label_mean_array_runtime.tolist(),
-        "label_std": label_std_array_runtime.tolist(),
-        "feature_mean": feature_mean.astype(np.float64).tolist(),
-        "feature_std": feature_std.astype(np.float64).tolist(),
-        "normalized_prior_bounds": normalized_prior_bounds,
-        "max_samples": MAX_SAMPLES,
-        "proposal_std": PROPOSAL_STD,
-        "rminus1_stop": RMINUS1_STOP,
-        "rminus1_cl_stop": RMINUS1_CL_STOP,
-        "seed": SEED,
-    }
-
-    posterior_norm = None
-    loaded_posterior_cache = False
-    resume_chain = False
-    if USE_POSTERIOR_CACHE and posterior_cache_path.exists() and not REBUILD_POSTERIOR_CACHE:
-        try:
-            posterior_norm = _load_posterior_cache(
-                posterior_cache_path,
-                posterior_cache_metadata,
-                len(PARAMETER_NAMES_RUNTIME),
-            )
-            loaded_posterior_cache = True
-            print(
-                f"Loaded posterior cache: {posterior_cache_path} "
-                f"({posterior_norm.shape[0]} samples); skipping Cobaya sampling."
-            )
-        except Exception as exc:
-            print(f"Ignoring incompatible posterior cache {posterior_cache_path}: {exc}")
 
     if posterior_norm is None:
         if cobaya_run is None:
@@ -615,6 +765,12 @@ def main() -> None:
                 posterior_cache_path,
                 posterior_norm,
                 posterior_cache_metadata,
+                label_true,
+                label_true_norm,
+                full_hyperparameters,
+                frame_context_array,
+                h1_files,
+                l1_files,
             )
             print(f"Saved posterior cache before plotting: {posterior_cache_path}")
 
@@ -692,6 +848,8 @@ def main() -> None:
 
     posterior_color = "#565A9E"
     posterior_outer_color = "#9295C8"
+    posterior_fill_inner_color = "#B8BBDD"
+    posterior_fill_outer_color = "#E0E1F0"
     truth_color = "#C9795D"
     parameter_limits = [
         _adaptive_limits(posterior[:, i], label_true[i], means[i])
@@ -701,7 +859,7 @@ def main() -> None:
     with plt.rc_context(
         {
             "font.family": "serif",
-            "figure.facecolor": "#FBFAFD",
+            "figure.facecolor": "#FFFFFF",
             "axes.facecolor": "#FFFFFF",
             "axes.edgecolor": "#777780",
             "axes.linewidth": 0.9,
@@ -758,6 +916,20 @@ def main() -> None:
                     if zz is not None:
                         level_68, level_95 = _credible_levels_from_density(zz, [0.68, 0.95])
                         contour_levels = sorted(set([level_95, level_68]))
+                        density_max = float(np.max(zz))
+                        if level_95 < level_68 < density_max:
+                            ax.contourf(
+                                xx,
+                                yy,
+                                zz,
+                                levels=[level_95, level_68, density_max],
+                                colors=[
+                                    posterior_fill_outer_color,
+                                    posterior_fill_inner_color,
+                                ],
+                                alpha=0.72,
+                                antialiased=True,
+                            )
                         ax.contour(
                             xx,
                             yy,
@@ -798,11 +970,21 @@ def main() -> None:
                     ax.set_ylim(*y_limits)
 
                 if row == n_params - 1:
-                    ax.set_xlabel(PARAMETER_NAMES_RUNTIME[col], fontsize=10)
+                    ax.set_xlabel(
+                        PARAMETER_PLOT_LABELS.get(
+                            PARAMETER_NAMES_RUNTIME[col], PARAMETER_NAMES_RUNTIME[col]
+                        ),
+                        fontsize=10,
+                    )
                 else:
                     ax.tick_params(axis="x", labelbottom=False)
                 if col == 0 and row > 0:
-                    ax.set_ylabel(PARAMETER_NAMES_RUNTIME[row], fontsize=10)
+                    ax.set_ylabel(
+                        PARAMETER_PLOT_LABELS.get(
+                            PARAMETER_NAMES_RUNTIME[row], PARAMETER_NAMES_RUNTIME[row]
+                        ),
+                        fontsize=10,
+                    )
                 elif col > 0:
                     ax.tick_params(axis="y", labelleft=False)
                 ax.tick_params(labelsize=8, length=3)

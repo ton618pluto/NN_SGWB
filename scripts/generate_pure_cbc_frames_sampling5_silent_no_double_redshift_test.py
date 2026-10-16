@@ -36,6 +36,9 @@ num_populations = 1  # this will be changed
 all_jobs = 2  # frame count + 1
 input_dir = f"./parameter_sampling_test/{version}"
 output_base_dir = f"./training_set_test/{version}/training_set0"
+# Optional ASD file used for the detector PSD and optimal-SNR calculation.
+# Keep None to preserve Bilby's detector-default PSD behavior.
+ASD_FILE_PATH = None
 
 
 def process_population(pop_idx, input_dir, output_base_dir, config):
@@ -43,6 +46,14 @@ def process_population(pop_idx, input_dir, output_base_dir, config):
     sampling_frequency_cfg = config["sampling_frequency"]
     minimum_frequency = config["minimum_frequency"]
     reference_frequency = config["reference_frequency"]
+    asd_file_path = config.get("asd_file_path")
+    custom_psd = None
+    if asd_file_path is not None:
+        if not os.path.exists(asd_file_path):
+            raise FileNotFoundError(f"ASD file not found: {asd_file_path}")
+        custom_psd = bilby.gw.detector.PowerSpectralDensity(
+            asd_file=asd_file_path
+        )
 
     param_file = os.path.join(input_dir, f"CBC_params_example{pop_idx:05d}.npz")
     if not os.path.exists(param_file):
@@ -120,6 +131,8 @@ def process_population(pop_idx, input_dir, output_base_dir, config):
             ifo.minimum_frequency = minimum_frequency
             ifo.sampling_frequency = sampling_frequency_cfg
             ifo.duration = duration
+            if custom_psd is not None:
+                ifo.power_spectral_density = custom_psd
 
         interferometers.set_strain_data_from_zero_noise(
             sampling_frequency=sampling_frequency_cfg,
@@ -302,6 +315,7 @@ def generate_samples(max_workers=8):
         "sampling_frequency": sampling_frequency,
         "minimum_frequency": 10,
         "reference_frequency": 25.0,
+        "asd_file_path": ASD_FILE_PATH,
     }
 
     for ifo_name in ["H1", "L1"]:

@@ -109,6 +109,20 @@ FULL_PARAMETER_NAMES = (
     "beta_q",
 )
 
+PARAMETER_PLOT_LABELS = {
+    "zp": r"$z_p$",
+    "alpha_z": r"$\alpha_z$",
+    "beta_z": r"$\beta_z$",
+    "alpha_m": r"$\alpha_m$",
+    "m_max": r"$m_{\mathrm{max}}$",
+    "delta_m": r"$\delta_m$",
+    "m_min": r"$m_{\mathrm{min}}$",
+    "lambda_peak": r"$\lambda_{\mathrm{peak}}$",
+    "mu_m": r"$\mu_m$",
+    "sigma_m": r"$\sigma_m$",
+    "beta_q": r"$\beta_q$",
+}
+
 
 def get_parameter_ranges(
     data_version: str | None,
@@ -245,12 +259,20 @@ def _save_posterior_cache(
     cache_path: Path,
     posterior_norm: np.ndarray,
     metadata: dict[str, object],
+    label_true: np.ndarray,
+    label_true_norm: np.ndarray,
+    full_hyperparameters: dict[str, float],
 ) -> None:
     temporary_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
     with temporary_path.open("wb") as handle:
         np.savez_compressed(
             handle,
             posterior_norm=np.asarray(posterior_norm, dtype=np.float64),
+            label_true=np.asarray(label_true, dtype=np.float64),
+            label_true_norm=np.asarray(label_true_norm, dtype=np.float64),
+            full_hyperparameters_json=np.asarray(
+                json.dumps(full_hyperparameters, sort_keys=True)
+            ),
             metadata_json=np.asarray(json.dumps(metadata, sort_keys=True)),
         )
     temporary_path.replace(cache_path)
@@ -260,13 +282,42 @@ def _load_posterior_cache(
     cache_path: Path,
     expected_metadata: dict[str, object],
     expected_parameter_count: int,
-) -> np.ndarray:
+) -> tuple[
+    np.ndarray,
+    np.ndarray | None,
+    np.ndarray | None,
+    dict[str, float] | None,
+    dict[str, object],
+]:
     with np.load(cache_path, allow_pickle=False) as saved:
         posterior_norm = np.asarray(saved["posterior_norm"], dtype=np.float64)
         saved_metadata_json = str(saved["metadata_json"].item())
+        saved_fields = set(saved.files)
+        truth_fields = {
+            "label_true",
+            "label_true_norm",
+            "full_hyperparameters_json",
+        }
+        if truth_fields.issubset(saved_fields):
+            label_true = np.asarray(saved["label_true"], dtype=np.float64)
+            label_true_norm = np.asarray(saved["label_true_norm"], dtype=np.float64)
+            full_hyperparameters = {
+                str(name): float(value)
+                for name, value in json.loads(
+                    str(saved["full_hyperparameters_json"].item())
+                ).items()
+            }
+        else:
+            label_true = None
+            label_true_norm = None
+            full_hyperparameters = None
 
-    if saved_metadata_json != json.dumps(expected_metadata, sort_keys=True):
-        raise ValueError("posterior cache metadata does not match the current run")
+    saved_metadata = json.loads(saved_metadata_json)
+    for key, expected_value in expected_metadata.items():
+        if saved_metadata.get(key) != expected_value:
+            raise ValueError(
+                f"posterior cache metadata field {key!r} does not match the current run"
+            )
     if (
         posterior_norm.ndim != 2
         or posterior_norm.shape[0] == 0
@@ -274,7 +325,22 @@ def _load_posterior_cache(
         or not np.all(np.isfinite(posterior_norm))
     ):
         raise ValueError(f"invalid cached posterior shape or values: {posterior_norm.shape}")
-    return posterior_norm
+    if label_true is not None:
+        if (
+            label_true.shape != (expected_parameter_count,)
+            or label_true_norm.shape != (expected_parameter_count,)
+            or not np.all(np.isfinite(label_true))
+            or not np.all(np.isfinite(label_true_norm))
+            or set(full_hyperparameters) != set(FULL_PARAMETER_NAMES)
+        ):
+            raise ValueError("invalid cached true parameter values")
+    return (
+        posterior_norm,
+        label_true,
+        label_true_norm,
+        full_hyperparameters,
+        saved_metadata,
+    )
 
 
 def _build_output_dir() -> Path:
@@ -385,26 +451,137 @@ def main() -> None:
     feature_mean = np.asarray(run_config["feature_mean"], dtype=np.float32)
     feature_std = np.asarray(run_config["feature_std"], dtype=np.float32)
 
-    data, label_true_norm, full_hyperparameters, h1_path, l1_path = _load_single_frame_data(
-        processed_test_version=TEST_DATA_VERSION,
-        test_sample_index=TEST_SAMPLE_INDEX,
-        frame_index=FRAME_INDEX,
-        feature_mean=feature_mean,
-        feature_std=feature_std,
-        parameter_names=parameter_names,
-        label_mean_array=label_mean_array,
-        label_std_array=label_std_array,
-    )
-    print(f"Test sample H1 path: {h1_path}")
-    print(f"Test sample L1 path: {l1_path}")
-    data = data.to(device)
-    label_true = label_true_norm * label_std_array + label_mean_array
-
     figure_dir = Path(__file__).resolve().parent / "result_fig"
     figure_dir.mkdir(parents=True, exist_ok=True)
     model_tag = "a_model2" if USE_MODEL2 else "a"
+    chain_prefix = str(
+        figure_dir
+        / f"cobaya_chain_singleframe_{TRAIN_DATA_VERSION}_{TEST_DATA_VERSION}_{model_tag}_pop{TEST_SAMPLE_INDEX:05d}_f{FRAME_INDEX:02d}"
+    )
+    posterior_cache_path = (
+        figure_dir
+        / f"singleframe_posterior_cache_{TRAIN_DATA_VERSION}_{TEST_DATA_VERSION}_"
+        f"{model_tag}_pop{TEST_SAMPLE_INDEX:05d}_f{FRAME_INDEX:02d}.npz"
+    )
+    checkpoint_name = "best_flow_v1_a_model2.pt" if USE_MODEL2 else "best_flow_v1_a.pt"
+    checkpoint_path = _build_output_dir() / checkpoint_name
+    checkpoint_stat = checkpoint_path.stat()
+    expected_cache_metadata = {
+        "format_version": 1,
+        "train_data_version": TRAIN_DATA_VERSION,
+        "test_data_version": TEST_DATA_VERSION,
+        "input_folder": input_folder,
+        "model_variant": run_config.get("model_variant", "model1"),
+        "checkpoint_name": checkpoint_name,
+        "checkpoint_size": checkpoint_stat.st_size,
+        "checkpoint_mtime_ns": checkpoint_stat.st_mtime_ns,
+        "test_sample_index": TEST_SAMPLE_INDEX,
+        "frame_index": FRAME_INDEX,
+        "parameter_names": list(parameter_names),
+        "label_mean": label_mean_array.tolist(),
+        "label_std": label_std_array.tolist(),
+        "feature_mean": feature_mean.astype(np.float64).tolist(),
+        "feature_std": feature_std.astype(np.float64).tolist(),
+        "normalized_prior_abs_max": NORMALIZED_PRIOR_ABS_MAX,
+        "max_samples": MAX_SAMPLES,
+        "proposal_std": PROPOSAL_STD,
+        "rminus1_stop": RMINUS1_STOP,
+        "rminus1_cl_stop": RMINUS1_CL_STOP,
+        "seed": SEED,
+    }
+
+    posterior_norm = None
+    label_true = None
+    label_true_norm = None
+    full_hyperparameters = None
+    h1_path = None
+    l1_path = None
+    data = None
+    saved_cache_metadata = None
+    cache_had_true_values = False
+    loaded_posterior_cache = False
+    if USE_POSTERIOR_CACHE and posterior_cache_path.exists() and not REBUILD_POSTERIOR_CACHE:
+        try:
+            (
+                posterior_norm,
+                label_true,
+                label_true_norm,
+                full_hyperparameters,
+                saved_cache_metadata,
+            ) = _load_posterior_cache(
+                posterior_cache_path,
+                expected_cache_metadata,
+                len(parameter_names),
+            )
+            loaded_posterior_cache = True
+            cache_had_true_values = label_true is not None
+            if saved_cache_metadata.get("h1_file"):
+                h1_path = Path(saved_cache_metadata["h1_file"]["path"])
+            if saved_cache_metadata.get("l1_file"):
+                l1_path = Path(saved_cache_metadata["l1_file"]["path"])
+            print(
+                f"Loaded posterior cache: {posterior_cache_path} "
+                f"({posterior_norm.shape[0]} samples); skipping Cobaya sampling."
+            )
+            if label_true is not None:
+                print("Loaded true parameter values from cache; skipping H1/L1 data loading.")
+            else:
+                print("Cached true parameter values are missing; loading the input files once.")
+        except Exception as exc:
+            print(f"Ignoring incompatible posterior cache {posterior_cache_path}: {exc}")
+
+    if label_true is None:
+        data, label_true_norm, full_hyperparameters, h1_path, l1_path = _load_single_frame_data(
+            processed_test_version=TEST_DATA_VERSION,
+            test_sample_index=TEST_SAMPLE_INDEX,
+            frame_index=FRAME_INDEX,
+            feature_mean=feature_mean,
+            feature_std=feature_std,
+            parameter_names=parameter_names,
+            label_mean_array=label_mean_array,
+            label_std_array=label_std_array,
+        )
+        label_true = label_true_norm * label_std_array + label_mean_array
+
+    print(f"Test sample H1 path: {h1_path}")
+    print(f"Test sample L1 path: {l1_path}")
+
+    posterior_cache_metadata = dict(expected_cache_metadata)
+    if h1_path is not None and l1_path is not None and h1_path.exists() and l1_path.exists():
+        posterior_cache_metadata.update(
+            {
+                "h1_file": {
+                    "path": str(h1_path),
+                    "size": h1_path.stat().st_size,
+                    "mtime_ns": h1_path.stat().st_mtime_ns,
+                },
+                "l1_file": {
+                    "path": str(l1_path),
+                    "size": l1_path.stat().st_size,
+                    "mtime_ns": l1_path.stat().st_mtime_ns,
+                },
+            }
+        )
+
+    if loaded_posterior_cache and saved_cache_metadata is not None and cache_had_true_values:
+        posterior_cache_metadata = saved_cache_metadata
+    elif loaded_posterior_cache:
+        _save_posterior_cache(
+            posterior_cache_path,
+            posterior_norm,
+            posterior_cache_metadata,
+            label_true,
+            label_true_norm,
+            full_hyperparameters,
+        )
+        print(f"Upgraded posterior cache with true parameter values: {posterior_cache_path}")
+
+    if data is not None:
+        data = data.to(device)
 
     def flow_target_logp(**params):
+        if data is None:
+            raise RuntimeError("Input data are unavailable for Cobaya sampling.")
         theta_norm = np.asarray([params[name] for name in norm_parameter_names], dtype=np.float32)
         theta = torch.tensor(theta_norm[None, :], dtype=torch.float32, device=device)
         with torch.no_grad():
@@ -422,69 +599,6 @@ def main() -> None:
     print(f"Label true: {label_true}")
     print(f"Label true norm: {label_true_norm}")
     print(f"Params info: {params_info}")
-
-    chain_prefix = str(
-        figure_dir
-        / f"cobaya_chain_singleframe_{TRAIN_DATA_VERSION}_{TEST_DATA_VERSION}_{model_tag}_pop{TEST_SAMPLE_INDEX:05d}_f{FRAME_INDEX:02d}"
-    )
-    posterior_cache_path = (
-        figure_dir
-        / f"singleframe_posterior_cache_{TRAIN_DATA_VERSION}_{TEST_DATA_VERSION}_"
-        f"{model_tag}_pop{TEST_SAMPLE_INDEX:05d}_f{FRAME_INDEX:02d}.npz"
-    )
-    checkpoint_name = "best_flow_v1_a_model2.pt" if USE_MODEL2 else "best_flow_v1_a.pt"
-    checkpoint_path = _build_output_dir() / checkpoint_name
-    checkpoint_stat = checkpoint_path.stat()
-    posterior_cache_metadata = {
-        "format_version": 1,
-        "train_data_version": TRAIN_DATA_VERSION,
-        "test_data_version": TEST_DATA_VERSION,
-        "input_folder": input_folder,
-        "model_variant": run_config.get("model_variant", "model1"),
-        "checkpoint_name": checkpoint_name,
-        "checkpoint_size": checkpoint_stat.st_size,
-        "checkpoint_mtime_ns": checkpoint_stat.st_mtime_ns,
-        "test_sample_index": TEST_SAMPLE_INDEX,
-        "frame_index": FRAME_INDEX,
-        "h1_file": {
-            "path": str(h1_path),
-            "size": h1_path.stat().st_size,
-            "mtime_ns": h1_path.stat().st_mtime_ns,
-        },
-        "l1_file": {
-            "path": str(l1_path),
-            "size": l1_path.stat().st_size,
-            "mtime_ns": l1_path.stat().st_mtime_ns,
-        },
-        "parameter_names": list(parameter_names),
-        "label_mean": label_mean_array.tolist(),
-        "label_std": label_std_array.tolist(),
-        "feature_mean": feature_mean.astype(np.float64).tolist(),
-        "feature_std": feature_std.astype(np.float64).tolist(),
-        "normalized_prior_abs_max": NORMALIZED_PRIOR_ABS_MAX,
-        "max_samples": MAX_SAMPLES,
-        "proposal_std": PROPOSAL_STD,
-        "rminus1_stop": RMINUS1_STOP,
-        "rminus1_cl_stop": RMINUS1_CL_STOP,
-        "seed": SEED,
-    }
-
-    posterior_norm = None
-    loaded_posterior_cache = False
-    if USE_POSTERIOR_CACHE and posterior_cache_path.exists() and not REBUILD_POSTERIOR_CACHE:
-        try:
-            posterior_norm = _load_posterior_cache(
-                posterior_cache_path,
-                posterior_cache_metadata,
-                len(parameter_names),
-            )
-            loaded_posterior_cache = True
-            print(
-                f"Loaded posterior cache: {posterior_cache_path} "
-                f"({posterior_norm.shape[0]} samples); skipping Cobaya sampling."
-            )
-        except Exception as exc:
-            print(f"Ignoring incompatible posterior cache {posterior_cache_path}: {exc}")
 
     if posterior_norm is None:
         if cobaya_run is None:
@@ -525,6 +639,9 @@ def main() -> None:
                 posterior_cache_path,
                 posterior_norm,
                 posterior_cache_metadata,
+                label_true,
+                label_true_norm,
+                full_hyperparameters,
             )
             print(f"Saved posterior cache before plotting: {posterior_cache_path}")
 
@@ -569,6 +686,8 @@ def main() -> None:
 
     posterior_color = "#565A9E"
     posterior_outer_color = "#9295C8"
+    posterior_fill_inner_color = "#B8BBDD"
+    posterior_fill_outer_color = "#E0E1F0"
     truth_color = "#C9795D"
     parameter_limits = (
         [
@@ -582,7 +701,7 @@ def main() -> None:
     with plt.rc_context(
         {
             "font.family": "serif",
-            "figure.facecolor": "#FBFAFD",
+            "figure.facecolor": "#FFFFFF",
             "axes.facecolor": "#FFFFFF",
             "axes.edgecolor": "#777780",
             "axes.linewidth": 0.9,
@@ -640,6 +759,20 @@ def main() -> None:
                     if zz is not None:
                         level_68, level_95 = _credible_levels_from_density(zz, [0.68, 0.95])
                         contour_levels = sorted(set([level_95, level_68]))
+                        density_max = float(np.max(zz))
+                        if level_95 < level_68 < density_max:
+                            ax.contourf(
+                                xx,
+                                yy,
+                                zz,
+                                levels=[level_95, level_68, density_max],
+                                colors=[
+                                    posterior_fill_outer_color,
+                                    posterior_fill_inner_color,
+                                ],
+                                alpha=0.72,
+                                antialiased=True,
+                            )
                         ax.contour(
                             xx,
                             yy,
@@ -680,11 +813,17 @@ def main() -> None:
                     ax.set_ylim(*y_limits)
 
                 if row == n_params - 1:
-                    ax.set_xlabel(parameter_names[col], fontsize=10)
+                    ax.set_xlabel(
+                        PARAMETER_PLOT_LABELS.get(parameter_names[col], parameter_names[col]),
+                        fontsize=10,
+                    )
                 else:
                     ax.tick_params(axis="x", labelbottom=False)
                 if col == 0 and row > 0:
-                    ax.set_ylabel(parameter_names[row], fontsize=10)
+                    ax.set_ylabel(
+                        PARAMETER_PLOT_LABELS.get(parameter_names[row], parameter_names[row]),
+                        fontsize=10,
+                    )
                 elif col > 0:
                     ax.tick_params(axis="y", labelleft=False)
                 ax.tick_params(labelsize=8, length=3)
